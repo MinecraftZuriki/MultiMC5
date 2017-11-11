@@ -84,7 +84,7 @@ QVariant VersionList::data(const QModelIndex &index, int role) const
 		auto iter = reqs.find(parentUid);
 		if (iter != reqs.end())
 		{
-			return iter.value();
+			return (*iter).equalsVersion;
 		}
 	}
 	case TypeRole: return version->type();

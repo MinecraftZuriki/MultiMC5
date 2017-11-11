@@ -348,7 +348,7 @@ void VersionPage::on_changeVersionBtn_clicked()
 			reloadComponentList();
 		}
 	}
-	m_inst->setComponentVersion(uid, vselect.selectedVersion()->descriptor());
+	m_profile->setComponentVersion(uid, vselect.selectedVersion()->descriptor());
 	doUpdate();
 	m_container->refreshContainer();
 }
@@ -376,19 +376,57 @@ void VersionPage::on_forgeBtn_clicked()
 		return;
 	}
 	VersionSelectDialog vselect(vlist.get(), tr("Select Forge version"), this);
-	vselect.setExactFilter(BaseVersionList::ParentVersionRole, m_inst->getComponentVersion("net.minecraft"));
-	vselect.setEmptyString(tr("No Forge versions are currently available for Minecraft ") + m_inst->getComponentVersion("net.minecraft"));
+	vselect.setExactFilter(BaseVersionList::ParentVersionRole, m_profile->getComponentVersion("net.minecraft"));
+	vselect.setEmptyString(tr("No Forge versions are currently available for Minecraft ") + m_profile->getComponentVersion("net.minecraft"));
 	vselect.setEmptyErrorString(tr("Couldn't load or download the Forge version lists!"));
 	if (vselect.exec() && vselect.selectedVersion())
 	{
 		auto vsn = vselect.selectedVersion();
-		m_inst->setComponentVersion("net.minecraftforge", vsn->descriptor());
+		m_profile->setComponentVersion("net.minecraftforge", vsn->descriptor());
 		m_profile->reload();
 		// m_profile->installVersion();
 		preselect(m_profile->rowCount(QModelIndex())-1);
 		m_container->refreshContainer();
 	}
 }
+
+// TODO: use something like this... except the final decision of what to show has to be deferred until the lists are known
+/*
+void VersionPage::on_liteloaderBtn_clicked()
+{
+	QString uid = "com.mumfrey.liteloader";
+	auto vlist = ENV.metadataIndex()->get(uid);
+	if(!vlist)
+	{
+		return;
+	}
+	VersionSelectDialog vselect(vlist.get(), tr("Select %1 version").arg(vlist->name()), this);
+	auto parentUid = vlist->parentUid();
+	if(!parentUid.isEmpty())
+	{
+		auto parentvlist = ENV.metadataIndex()->get(parentUid);
+		vselect.setExactFilter(BaseVersionList::ParentVersionRole, m_profile->getComponentVersion(parentUid));
+		vselect.setEmptyString(
+			tr("No %1 versions are currently available for %2 %3")
+				.arg(vlist->name())
+				.arg(parentvlist->name())
+				.arg(m_profile->getComponentVersion(parentUid)));
+	}
+	else
+	{
+		vselect.setEmptyString(tr("No %1 versions are currently available"));
+	}
+	vselect.setEmptyErrorString(tr("Couldn't load or download the %1 version lists!").arg(vlist->name()));
+	if (vselect.exec() && vselect.selectedVersion())
+	{
+		auto vsn = vselect.selectedVersion();
+		m_profile->setComponentVersion(uid, vsn->descriptor());
+		m_profile->reload();
+		preselect(m_profile->rowCount(QModelIndex())-1);
+		m_container->refreshContainer();
+	}
+}
+*/
 
 void VersionPage::on_liteloaderBtn_clicked()
 {
@@ -398,13 +436,13 @@ void VersionPage::on_liteloaderBtn_clicked()
 		return;
 	}
 	VersionSelectDialog vselect(vlist.get(), tr("Select LiteLoader version"), this);
-	vselect.setExactFilter(BaseVersionList::ParentVersionRole, m_inst->getComponentVersion("net.minecraft"));
-	vselect.setEmptyString(tr("No LiteLoader versions are currently available for Minecraft ") + m_inst->getComponentVersion("net.minecraft"));
+	vselect.setExactFilter(BaseVersionList::ParentVersionRole, m_profile->getComponentVersion("net.minecraft"));
+	vselect.setEmptyString(tr("No LiteLoader versions are currently available for Minecraft ") + m_profile->getComponentVersion("net.minecraft"));
 	vselect.setEmptyErrorString(tr("Couldn't load or download the LiteLoader version lists!"));
 	if (vselect.exec() && vselect.selectedVersion())
 	{
 		auto vsn = vselect.selectedVersion();
-		m_inst->setComponentVersion("com.mumfrey.liteloader", vsn->descriptor());
+		m_profile->setComponentVersion("com.mumfrey.liteloader", vsn->descriptor());
 		m_profile->reload();
 		// m_profile->installVersion(vselect.selectedVersion());
 		preselect(m_profile->rowCount(QModelIndex())-1);

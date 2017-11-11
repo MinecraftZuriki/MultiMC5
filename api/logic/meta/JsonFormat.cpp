@@ -51,18 +51,9 @@ static VersionPtr parseCommonVersion(const QString &uid, const QJsonObject &obj)
 	version->setType(ensureString(obj, "type", QString()));
 	version->setParentUid(ensureString(obj, "parentUid", QString()));
 	version->setRecommended(ensureBoolean(obj, QString("recommended"), false));
-	if(obj.contains("requires"))
-	{
-		QHash<QString, QString> requires;
-		auto reqobj = requireObject(obj, "requires");
-		auto iter = reqobj.begin();
-		while(iter != reqobj.end())
-		{
-			requires[iter.key()] = requireString(iter.value());
-			iter++;
-		}
-		version->setRequires(requires);
-	}
+	RequireSet requires;
+	parseRequires(obj, &requires);
+	version->setRequires(requires);
 	return version;
 }
 
@@ -145,4 +136,48 @@ void parseVersion(const QJsonObject &obj, Version *ptr)
 		throw ParseException(QObject::tr("Unknown formatVersion: %1").arg(version));
 	}
 }
+
+/*
+[
+{"uid":"foo", "equals":"version"}
+]
+*/
+void parseRequires(const QJsonObject& obj, RequireSet* ptr)
+{
+	if(obj.contains("requires"))
+	{
+		QSet<QString> requires;
+		auto reqArray = requireArray(obj, "requires");
+		auto iter = reqArray.begin();
+		while(iter != reqArray.end())
+		{
+			auto reqObject = requireObject(*iter);
+			auto uid = requireString(reqObject, "uid");
+			auto equals = ensureString(reqObject, "equals", QString());
+			ptr->insert(Require(uid, equals));
+			iter++;
+		}
+	}
 }
+void serializeRequires(QJsonObject& obj, RequireSet* ptr)
+{
+	if(!ptr || ptr->isEmpty())
+	{
+		return;
+	}
+	QJsonArray arrOut;
+	for(auto &iter: *ptr)
+	{
+		QJsonObject reqOut;
+		reqOut.insert("uid", iter.uid);
+		if(!iter.equalsVersion.isEmpty())
+		{
+			reqOut.insert("equals", iter.equalsVersion);
+		}
+		arrOut.append(reqOut);
+	}
+	obj.insert("requires", arrOut);
+}
+
+}
+

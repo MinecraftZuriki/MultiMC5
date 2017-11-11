@@ -63,12 +63,6 @@ private:
 MinecraftInstance::MinecraftInstance(SettingsObjectPtr globalSettings, SettingsObjectPtr settings, const QString &rootDir)
 	: BaseInstance(globalSettings, settings, rootDir)
 {
-	// FIXME: remove these
-	m_settings->registerSetting({"IntendedVersion", "MinecraftVersion"}, "");
-	m_settings->registerSetting("LWJGLVersion", "2.9.1");
-	m_settings->registerSetting("ForgeVersion", "");
-	m_settings->registerSetting("LiteloaderVersion", "");
-
 	// Java Settings
 	auto javaOverride = m_settings->registerSetting("OverrideJava", false);
 	auto locationOverride = m_settings->registerSetting("OverrideJavaLocation", false);
@@ -101,11 +95,27 @@ MinecraftInstance::MinecraftInstance(SettingsObjectPtr globalSettings, SettingsO
 	// Minecraft launch method
 	auto launchMethodOverride = m_settings->registerSetting("OverrideMCLaunchMethod", false);
 	m_settings->registerOverride(globalSettings->getSetting("MCLaunchMethod"), launchMethodOverride);
+
+	// DEPRECATED: Read what versions the user configuration thinks should be used
+	m_settings->registerSetting({"IntendedVersion", "MinecraftVersion"}, QString());
+	m_settings->registerSetting("LWJGLVersion", "2.9.1");
+	m_settings->registerSetting("ForgeVersion", QString());
+	m_settings->registerSetting("LiteloaderVersion", QString());
+
+	m_components.reset(new ComponentList(this));
+	m_components->suggestVersion("net.minecraft", m_settings->get("IntendedVersion").toString());
+	auto setting = m_settings->getSetting("LWJGLVersion");
+	// only respect this when this is not default
+	if(setting->defValue() != setting->get())
+	{
+		m_components->suggestVersion("org.lwjgl", m_settings->get("LWJGLVersion").toString());
+	}
+	m_components->suggestVersion("net.minecraftforge", m_settings->get("ForgeVersion").toString());
+	m_components->suggestVersion("com.mumfrey.liteloader", m_settings->get("LiteloaderVersion").toString());
 }
 
 void MinecraftInstance::init()
 {
-	createProfile();
 }
 
 QString MinecraftInstance::typeName() const
@@ -131,20 +141,9 @@ bool MinecraftInstance::reload()
 	return false;
 }
 
-void MinecraftInstance::createProfile()
-{
-	m_components.reset(new ComponentList(this));
-}
-
 void MinecraftInstance::reloadProfile()
 {
 	m_components->reload();
-	emit versionReloaded();
-}
-
-void MinecraftInstance::clearProfile()
-{
-	m_components->clearProfile();
 	emit versionReloaded();
 }
 
@@ -771,7 +770,7 @@ QString MinecraftInstance::getStatusbarDescription()
 	}
 
 	QString description;
-	description.append(tr("Minecraft %1 (%2)").arg(getComponentVersion("net.minecraft")).arg(typeName()));
+	description.append(tr("Minecraft %1 (%2)").arg(m_components->getComponentVersion("net.minecraft")).arg(typeName()));
 	if(totalTimePlayed() > 0)
 	{
 		description.append(tr(", played for %1").arg(prettifyTimeDuration(totalTimePlayed())));
@@ -898,53 +897,6 @@ QString MinecraftInstance::launchMethod()
 JavaVersion MinecraftInstance::getJavaVersion() const
 {
 	return JavaVersion(settings()->get("JavaVersion").toString());
-}
-
-bool MinecraftInstance::setComponentVersion(const QString& uid, const QString& version)
-{
-	if(uid == "net.minecraft")
-	{
-		settings()->set("IntendedVersion", version);
-	}
-	else if (uid == "org.lwjgl")
-	{
-		settings()->set("LWJGLVersion", version);
-	}
-	else if (uid == "net.minecraftforge")
-	{
-		settings()->set("ForgeVersion", version);
-	}
-	else if (uid == "com.mumfrey.liteloader")
-	{
-		settings()->set("LiteloaderVersion", version);
-	}
-	if(getComponentList())
-	{
-		clearProfile();
-	}
-	emit propertiesChanged(this);
-	return true;
-}
-
-QString MinecraftInstance::getComponentVersion(const QString& uid) const
-{
-	if(uid == "net.minecraft")
-	{
-		return settings()->get("IntendedVersion").toString();
-	}
-	else if(uid == "org.lwjgl")
-	{
-		return settings()->get("LWJGLVersion").toString();
-	}
-	else if(uid == "net.minecraftforge")
-	{
-		return settings()->get("ForgeVersion").toString();
-	}
-	else if(uid == "com.mumfrey.liteloader")
-	{
-		return settings()->get("LiteloaderVersion").toString();
-	}
-	return QString();
 }
 
 std::shared_ptr<ModList> MinecraftInstance::loaderModList() const

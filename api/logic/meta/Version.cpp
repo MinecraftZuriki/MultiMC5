@@ -109,7 +109,7 @@ void Meta::Version::setTime(const qint64 time)
 	emit timeChanged();
 }
 
-void Meta::Version::setRequires(const QHash<QString, QString> &requires)
+void Meta::Version::setRequires(const Meta::RequireSet &requires)
 {
 	m_requires = requires;
 	emit requiresChanged();

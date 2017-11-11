@@ -53,10 +53,8 @@ public:
 
 
 	//////  Profile management //////
-	void createProfile();
 	std::shared_ptr<ComponentList> getComponentList() const;
 	void reloadProfile();
-	void clearProfile();
 	bool reload() override;
 
 
@@ -104,11 +102,6 @@ public:
 	virtual QStringList processMinecraftArgs(AuthSessionPtr account) const;
 
 	virtual JavaVersion getJavaVersion() const;
-
-	// FIXME: remove
-	QString getComponentVersion(const QString &uid) const;
-	// FIXME: remove
-	bool setComponentVersion(const QString &uid, const QString &version);
 
 signals:
 	void versionReloaded();

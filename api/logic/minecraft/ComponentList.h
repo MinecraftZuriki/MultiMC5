@@ -85,6 +85,13 @@ public:
 
 	std::shared_ptr<LaunchProfile> getProfile() const;
 	void clearProfile();
+
+	// NOTE: used ONLY by MinecraftInstance to provide legacy version mappings from instance config
+	void suggestVersion(const QString &uid, const QString &version);
+
+	QString getComponentVersion(const QString &uid) const;
+
+	bool setComponentVersion(const QString &uid, const QString &version);
 public:
 	/// get the profile patch by id
 	ProfilePatchPtr versionPatch(const QString &id);
@@ -92,6 +99,7 @@ public:
 	/// get the profile patch by index
 	ProfilePatchPtr versionPatch(int index);
 
+private:
 	/// save the current patch order
 	void saveCurrentOrder() const;
 
@@ -102,7 +110,7 @@ public:
 	void appendPatch(ProfilePatchPtr patch);
 
 private:
-	void load_internal();
+	void load();
 	bool resetOrder_internal();
 	bool saveOrder_internal(ProfileUtils::PatchOrder order) const;
 	bool installJarMods_internal(QStringList filepaths);
@@ -110,9 +118,7 @@ private:
 	bool removePatch_internal(ProfilePatchPtr patch);
 	bool customizePatch_internal(ProfilePatchPtr patch);
 	bool revertPatch_internal(ProfilePatchPtr patch);
-	void loadDefaultBuiltinPatches_internal();
-	void loadUserPatches_internal();
-	void upgradeDeprecatedFiles_internal();
+	void loadLegacy();
 
 private: /* data */
 	/// list of attached profile patches
@@ -122,4 +128,6 @@ private: /* data */
 	MinecraftInstance *m_instance;
 
 	std::shared_ptr<LaunchProfile> m_profile;
+
+	std::map<QString, QString> m_suggestedVersions;
 };

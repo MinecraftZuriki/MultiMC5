@@ -10,6 +10,7 @@
 #include "minecraft/Rule.h"
 #include "ProblemProvider.h"
 #include "Library.h"
+#include <meta/JsonFormat.h>
 
 class ComponentList;
 class VersionFile;
@@ -88,6 +89,9 @@ public: /* data */
 
 	/// MultiMC: list of mods added to this version
 	QList<LibraryPtr> mods;
+
+	/// MultiMC: set of packages this depends on
+	QSet<Meta::Require> m_requires;
 
 public:
 	// Mojang: DEPRECATED list of 'downloads' - client jar, server jar, windows server exe, maybe more.

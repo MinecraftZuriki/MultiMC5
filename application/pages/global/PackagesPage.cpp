@@ -38,10 +38,17 @@ static QString formatRequires(const VersionPtr &version)
 	auto iter = reqs.begin();
 	while (iter != reqs.end())
 	{
-		auto &uid = iter.key();
-		auto &version = iter.value();
+		auto &uid = iter->uid;
+		auto &version = iter->equalsVersion;
 		const QString readable = ENV.metadataIndex()->hasUid(uid) ? ENV.metadataIndex()->get(uid)->humanReadable() : uid;
-		lines.append(QString("%1 (%2)").arg(readable, version));
+		if(!version.isEmpty())
+		{
+			lines.append(QString("%1 (%2)").arg(readable, version));
+		}
+		else
+		{
+			lines.append(QString("%1").arg(readable));
+		}
 		iter++;
 	}
 	return lines.join('\n');

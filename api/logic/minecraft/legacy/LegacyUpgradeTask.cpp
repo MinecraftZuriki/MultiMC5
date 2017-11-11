@@ -86,11 +86,10 @@ void LegacyUpgradeTask::copyFinished()
 			}
 		}
 	}
-	inst->setComponentVersion("net.minecraft", preferredVersionNumber);
+	auto components = inst->getComponentList();
+	components->setComponentVersion("net.minecraft", preferredVersionNumber);
 
-	// BUG: reloadProfile should not be necessary, but setComponentVersion voids the profile created by init()!
 	inst->reloadProfile();
-	auto profile = inst->getComponentList();
 
 	if(legacyInst->shouldUseCustomBaseJar())
 	{
@@ -98,7 +97,7 @@ void LegacyUpgradeTask::copyFinished()
 		qDebug() << "Base jar is custom! : " << jarPath;
 		// FIXME: handle case when the jar is unreadable?
 		// TODO: check the hash, if it's the same as the upstream jar, do not do this
-		profile->installCustomJar(jarPath);
+		components->installCustomJar(jarPath);
 	}
 
 	auto jarMods = legacyInst->getJarMods();
@@ -106,7 +105,7 @@ void LegacyUpgradeTask::copyFinished()
 	{
 		QString modPath = jarMod.filename().absoluteFilePath();
 		qDebug() << "jarMod: " << modPath;
-		profile->installJarMods({modPath});
+		components->installJarMods({modPath});
 	}
 
 	// remove all the extra garbage we no longer need

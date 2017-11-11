@@ -23,7 +23,7 @@ void FMLLibrariesTask::executeTask()
 		return;
 	}
 
-	QString version = inst->getComponentVersion("net.minecraft");
+	QString version = components->getComponentVersion("net.minecraft");
 	auto &fmlLibsMapping = g_VersionFilterData.fmlLibsMapping;
 	if (!fmlLibsMapping.contains(version))
 	{

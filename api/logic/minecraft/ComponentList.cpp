@@ -44,7 +44,7 @@ ComponentList::~ComponentList()
 void ComponentList::reload()
 {
 	beginResetModel();
-	load_internal();
+	load();
 	reapplyPatches();
 	endResetModel();
 }
@@ -344,6 +344,7 @@ void ComponentList::resetOrder()
 	reload();
 }
 
+// FIXME: this should either erase the current launch profile or mark it as dirty in some way
 bool ComponentList::reapplyPatches()
 {
 	try
@@ -391,11 +392,12 @@ int ComponentList::getFreeOrderNumber()
 	return largest + 1;
 }
 
-void ComponentList::upgradeDeprecatedFiles_internal()
+// NOTE this is really old stuff, and only needs to be used when loading the old hardcoded component-unaware format.
+static void upgradeDeprecatedFiles(QString root, QString instanceName)
 {
-	auto versionJsonPath = FS::PathCombine(m_instance->instanceRoot(), "version.json");
-	auto customJsonPath = FS::PathCombine(m_instance->instanceRoot(), "custom.json");
-	auto mcJson = FS::PathCombine(m_instance->instanceRoot(), "patches" , "net.minecraft.json");
+	auto versionJsonPath = FS::PathCombine(root, "version.json");
+	auto customJsonPath = FS::PathCombine(root, "custom.json");
+	auto mcJson = FS::PathCombine(root, "patches" , "net.minecraft.json");
 
 	QString sourceFile;
 	QString renameFile;
@@ -414,14 +416,14 @@ void ComponentList::upgradeDeprecatedFiles_internal()
 	{
 		if(!FS::ensureFilePathExists(mcJson))
 		{
-			qWarning() << "Couldn't create patches folder for" << m_instance->name();
+			qWarning() << "Couldn't create patches folder for" << instanceName;
 			return;
 		}
 		if(!renameFile.isEmpty() && QFile::exists(renameFile))
 		{
 			if(!QFile::rename(renameFile, renameFile + ".old"))
 			{
-				qWarning() << "Couldn't rename" << renameFile << "to" << renameFile + ".old" << "in" << m_instance->name();
+				qWarning() << "Couldn't rename" << renameFile << "to" << renameFile + ".old" << "in" << instanceName;
 				return;
 			}
 		}
@@ -435,25 +437,26 @@ void ComponentList::upgradeDeprecatedFiles_internal()
 		if(!newPatchFile.open(QIODevice::WriteOnly))
 		{
 			newPatchFile.cancelWriting();
-			qWarning() << "Couldn't open main patch for writing in" << m_instance->name();
+			qWarning() << "Couldn't open main patch for writing in" << instanceName;
 			return;
 		}
 		newPatchFile.write(data);
 		if(!newPatchFile.commit())
 		{
-			qWarning() << "Couldn't save main patch in" << m_instance->name();
+			qWarning() << "Couldn't save main patch in" << instanceName;
 			return;
 		}
 		if(!QFile::rename(sourceFile, sourceFile + ".old"))
 		{
-			qWarning() << "Couldn't rename" << sourceFile << "to" << sourceFile + ".old" << "in" << m_instance->name();
+			qWarning() << "Couldn't rename" << sourceFile << "to" << sourceFile + ".old" << "in" << instanceName;
 			return;
 		}
 	}
 }
 
-void ComponentList::loadDefaultBuiltinPatches_internal()
+void ComponentList::loadLegacy()
 {
+	upgradeDeprecatedFiles(m_instance->instanceRoot(), m_instance->name());
 	auto addBuiltinPatch = [&](const QString &uid, const QString intendedVersion, int order)
 	{
 		auto jsonFilePath = FS::PathCombine(m_instance->instanceRoot(), "patches" , uid + ".json");
@@ -479,12 +482,9 @@ void ComponentList::loadDefaultBuiltinPatches_internal()
 		profilePatch->setOrder(order);
 		appendPatch(profilePatch);
 	};
-	addBuiltinPatch("net.minecraft", m_instance->getComponentVersion("net.minecraft"), -2);
-	addBuiltinPatch("org.lwjgl", m_instance->getComponentVersion("org.lwjgl"), -1);
-}
+	addBuiltinPatch("net.minecraft", getComponentVersion("net.minecraft"), -2);
+	addBuiltinPatch("org.lwjgl", getComponentVersion("org.lwjgl"), -1);
 
-void ComponentList::loadUserPatches_internal()
-{
 	// first, collect all patches (that are not builtins of OneSix) and load them
 	QMap<QString, ProfilePatchPtr> loadedPatches;
 	QDir patchesDir(FS::PathCombine(m_instance->instanceRoot(),"patches"));
@@ -511,7 +511,7 @@ void ComponentList::loadUserPatches_internal()
 	// these are 'special'... if not already loaded from instance files, grab them from the metadata repo.
 	auto loadSpecial = [&](const QString & uid, int order)
 	{
-		auto patchVersion = m_instance->getComponentVersion(uid);
+		auto patchVersion = getComponentVersion(uid);
 		if(!patchVersion.isEmpty() && !loadedPatches.contains(uid))
 		{
 			auto patch = std::make_shared<ProfilePatch>(ENV.metadataIndex()->get(uid, patchVersion));
@@ -573,12 +573,18 @@ void ComponentList::loadUserPatches_internal()
 }
 
 
-void ComponentList::load_internal()
+void ComponentList::load()
 {
 	clearPatches();
-	upgradeDeprecatedFiles_internal();
-	loadDefaultBuiltinPatches_internal();
-	loadUserPatches_internal();
+	QFile componentsFile(FS::PathCombine(m_instance->instanceRoot(), "components.json"));
+	if(componentsFile.exists())
+	{
+		// well, nothing yet...
+	}
+	else
+	{
+		loadLegacy();
+	}
 }
 
 bool ComponentList::saveOrder_internal(ProfileUtils::PatchOrder order) const
@@ -605,9 +611,9 @@ bool ComponentList::removePatch_internal(ProfilePatchPtr patch)
 			return false;
 		}
 	}
-	if(!m_instance->getComponentVersion(patch->getID()).isEmpty())
+	if(!getComponentVersion(patch->getID()).isEmpty())
 	{
-		m_instance->setComponentVersion(patch->getID(), QString());
+		setComponentVersion(patch->getID(), QString());
 	}
 
 	// FIXME: we need a generic way of removing local resources, not just jar mods...
@@ -672,7 +678,7 @@ bool ComponentList::customizePatch_internal(ProfilePatchPtr patch)
 		{
 			return false;
 		}
-		load_internal();
+		load();
 	}
 	catch (Exception &error)
 	{
@@ -699,7 +705,7 @@ bool ComponentList::revertPatch_internal(ProfilePatchPtr patch)
 	// FIXME: get rid of this try-catch.
 	try
 	{
-		load_internal();
+		load();
 	}
 	catch (Exception &error)
 	{
@@ -847,4 +853,28 @@ std::shared_ptr<LaunchProfile> ComponentList::getProfile() const
 void ComponentList::clearProfile()
 {
 	m_profile.reset();
+}
+
+void ComponentList::suggestVersion(const QString& uid, const QString& version)
+{
+	if(version.isEmpty())
+	{
+		return;
+	}
+	m_suggestedVersions[uid] = version;
+}
+
+bool ComponentList::setComponentVersion(const QString& uid, const QString& version)
+{
+	return false;
+}
+
+QString ComponentList::getComponentVersion(const QString& uid) const
+{
+	const auto iter = m_suggestedVersions.find(uid);
+	if (iter != m_suggestedVersions.end())
+	{
+		return (*iter).second;
+	}
+	return QString();
 }

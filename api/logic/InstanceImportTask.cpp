@@ -242,7 +242,8 @@ void InstanceImportTask::processFlame()
 		mcVersion.remove(QRegExp("[.]+$"));
 		qWarning() << "Mysterious trailing dots removed from Minecraft version while importing pack.";
 	}
-	instance.setComponentVersion("net.minecraft", mcVersion);
+	auto components = instance.getComponentList();
+	components->setComponentVersion("net.minecraft", mcVersion);
 	if(!forgeVersion.isEmpty())
 	{
 		// FIXME: dirty, nasty, hack. Proper solution requires dependency resolution and knowledge of the metadata.
@@ -257,7 +258,7 @@ void InstanceImportTask::processFlame()
 				qWarning() << "Could not map recommended forge version for" << mcVersion;
 			}
 		}
-		instance.setComponentVersion("net.minecraftforge", forgeVersion);
+		components->setComponentVersion("net.minecraftforge", forgeVersion);
 	}
 	if (m_instIcon != "default")
 	{

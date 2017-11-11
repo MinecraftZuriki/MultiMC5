@@ -5,6 +5,7 @@
 
 //FIXME: remove this
 #include "minecraft/MinecraftInstance.h"
+#include "minecraft/ComponentList.h"
 
 InstanceCreationTask::InstanceCreationTask(SettingsObjectPtr settings, const QString & stagingPath, BaseVersionPtr version,
 	const QString& instName, const QString& instIcon, const QString& instGroup)
@@ -26,7 +27,8 @@ void InstanceCreationTask::executeTask()
 		instanceSettings->registerSetting("InstanceType", "Legacy");
 		instanceSettings->set("InstanceType", "OneSix");
 		auto inst = new MinecraftInstance(m_globalSettings, instanceSettings, m_stagingPath);
-		inst->setComponentVersion("net.minecraft", m_version->descriptor());
+		auto components = inst->getComponentList();
+		components->setComponentVersion("net.minecraft", m_version->descriptor());
 		inst->setName(m_instName);
 		inst->setIconKey(m_instIcon);
 		inst->init();
