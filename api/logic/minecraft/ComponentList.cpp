@@ -31,10 +31,42 @@
 #include <minecraft/MinecraftInstance.h>
 #include <QUuid>
 
+struct Component
+{
+	QString uid;
+	QString cachedName;
+	QString currentVersion;
+	bool asDependency = false;
+	bool pinned = false;
+	// does this use a file?
+	bool usesFile = false;
+	// caching mechanism: do not reload file unless its timestamp has changed
+	QDateTime fileTimestamp;
+};
+using ComponentPtr = std::unique_ptr<Component>;
+
+struct ComponentListData
+{
+	/// list of attached profile patches
+	QList<ProfilePatchPtr> m_patches;
+
+	// the instance this belongs to
+	MinecraftInstance *m_instance;
+
+	std::shared_ptr<LaunchProfile> m_profile;
+
+	// NOTE: This is here for conversion from instance.cfg only
+	std::map<QString, QString> m_oldConfigVersions;
+
+	// persistent list of components
+	std::vector<ComponentPtr> components;
+	std::map<QString, size_t> componentIndex;
+};
+
 ComponentList::ComponentList(MinecraftInstance * instance)
 	: QAbstractListModel()
 {
-	m_instance = instance;
+	d->m_instance = instance;
 }
 
 ComponentList::~ComponentList()
@@ -49,18 +81,11 @@ void ComponentList::reload()
 	endResetModel();
 }
 
-void ComponentList::clearPatches()
-{
-	beginResetModel();
-	m_patches.clear();
-	endResetModel();
-}
-
 void ComponentList::appendPatch(ProfilePatchPtr patch)
 {
-	int index = m_patches.size();
+	int index = d->m_patches.size();
 	beginInsertRows(QModelIndex(), index, index);
-	m_patches.append(patch);
+	d->m_patches.append(patch);
 	endInsertRows();
 }
 
@@ -80,7 +105,7 @@ bool ComponentList::remove(const int index)
 	}
 
 	beginRemoveRows(QModelIndex(), index, index);
-	m_patches.removeAt(index);
+	d->m_patches.removeAt(index);
 	endRemoveRows();
 	reapplyPatches();
 	saveCurrentOrder();
@@ -90,7 +115,7 @@ bool ComponentList::remove(const int index)
 bool ComponentList::remove(const QString id)
 {
 	int i = 0;
-	for (auto patch : m_patches)
+	for (auto patch : d->m_patches)
 	{
 		if (patch->getID() == id)
 		{
@@ -143,7 +168,7 @@ bool ComponentList::revertToBase(int index)
 
 ProfilePatchPtr ComponentList::versionPatch(const QString &id)
 {
-	for (auto patch : m_patches)
+	for (auto patch : d->m_patches)
 	{
 		if (patch->getID() == id)
 		{
@@ -155,14 +180,14 @@ ProfilePatchPtr ComponentList::versionPatch(const QString &id)
 
 ProfilePatchPtr ComponentList::versionPatch(int index)
 {
-	if(index < 0 || index >= m_patches.size())
+	if(index < 0 || index >= d->m_patches.size())
 		return nullptr;
-	return m_patches[index];
+	return d->m_patches[index];
 }
 
 bool ComponentList::isVanilla()
 {
-	for(auto patchptr: m_patches)
+	for(auto patchptr: d->m_patches)
 	{
 		if(patchptr->isCustom())
 			return false;
@@ -173,7 +198,7 @@ bool ComponentList::isVanilla()
 bool ComponentList::revertToVanilla()
 {
 	// remove patches, if present
-	auto VersionPatchesCopy = m_patches;
+	auto VersionPatchesCopy = d->m_patches;
 	for(auto & it: VersionPatchesCopy)
 	{
 		if (!it->isCustom())
@@ -204,17 +229,17 @@ QVariant ComponentList::data(const QModelIndex &index, int role) const
 	int row = index.row();
 	int column = index.column();
 
-	if (row < 0 || row >= m_patches.size())
+	if (row < 0 || row >= d->m_patches.size())
 		return QVariant();
 
-	auto patch = m_patches.at(row);
+	auto patch = d->m_patches.at(row);
 
 	if (role == Qt::DisplayRole)
 	{
 		switch (column)
 		{
 		case 0:
-			return m_patches.at(row)->getName();
+			return d->m_patches.at(row)->getName();
 		case 1:
 		{
 			if(patch->isCustom())
@@ -283,7 +308,7 @@ Qt::ItemFlags ComponentList::flags(const QModelIndex &index) const
 
 int ComponentList::rowCount(const QModelIndex &parent) const
 {
-	return m_patches.size();
+	return d->m_patches.size();
 }
 
 int ComponentList::columnCount(const QModelIndex &parent) const
@@ -294,7 +319,7 @@ int ComponentList::columnCount(const QModelIndex &parent) const
 void ComponentList::saveCurrentOrder() const
 {
 	ProfileUtils::PatchOrder order;
-	for(auto item: m_patches)
+	for(auto item: d->m_patches)
 	{
 		if(!item->isMoveable())
 			continue;
@@ -315,7 +340,7 @@ void ComponentList::move(const int index, const MoveDirection direction)
 		theirIndex = index + 1;
 	}
 
-	if (index < 0 || index >= m_patches.size())
+	if (index < 0 || index >= d->m_patches.size())
 		return;
 	if (theirIndex >= rowCount())
 		theirIndex = rowCount() - 1;
@@ -333,7 +358,7 @@ void ComponentList::move(const int index, const MoveDirection direction)
 		return;
 	}
 	beginMoveRows(QModelIndex(), index, index, QModelIndex(), togap);
-	m_patches.swap(index, theirIndex);
+	d->m_patches.swap(index, theirIndex);
 	endMoveRows();
 	reapplyPatches();
 	saveCurrentOrder();
@@ -349,16 +374,16 @@ bool ComponentList::reapplyPatches()
 {
 	try
 	{
-		m_profile.reset(new LaunchProfile);
-		for(auto file: m_patches)
+		d->m_profile.reset(new LaunchProfile);
+		for(auto file: d->m_patches)
 		{
 			qDebug() << "Applying" << file->getID() << (file->getProblemSeverity() == ProblemSeverity::Error ? "ERROR" : "GOOD");
-			file->applyTo(m_profile.get());
+			file->applyTo(d->m_profile.get());
 		}
 	}
 	catch (Exception & error)
 	{
-		m_profile.reset();
+		d->m_profile.reset();
 		qWarning() << "Couldn't apply profile patches because: " << error.cause();
 		return false;
 	}
@@ -383,7 +408,7 @@ int ComponentList::getFreeOrderNumber()
 {
 	int largest = 100;
 	// yes, I do realize this is dumb. The order thing itself is dumb. and to be removed next.
-	for(auto thing: m_patches)
+	for(auto thing: d->m_patches)
 	{
 		int order = thing->getOrder();
 		if(order > largest)
@@ -392,7 +417,7 @@ int ComponentList::getFreeOrderNumber()
 	return largest + 1;
 }
 
-// NOTE this is really old stuff, and only needs to be used when loading the old hardcoded component-unaware format.
+// NOTE this is really old stuff, and only needs to be used when loading the old hardcoded component-unaware format (loadPreComponentConfig).
 static void upgradeDeprecatedFiles(QString root, QString instanceName)
 {
 	auto versionJsonPath = FS::PathCombine(root, "version.json");
@@ -432,6 +457,7 @@ static void upgradeDeprecatedFiles(QString root, QString instanceName)
 		file->uid = "net.minecraft";
 		file->version = file->minecraftVersion;
 		file->name = "Minecraft";
+		file->requires.insert(Meta::Require("org.lwjgl"));
 		auto data = OneSixVersionFormat::versionFileToJson(file, false).toJson();
 		QSaveFile newPatchFile(mcJson);
 		if(!newPatchFile.open(QIODevice::WriteOnly))
@@ -454,12 +480,12 @@ static void upgradeDeprecatedFiles(QString root, QString instanceName)
 	}
 }
 
-void ComponentList::loadLegacy()
+void ComponentList::loadPreComponentConfig()
 {
-	upgradeDeprecatedFiles(m_instance->instanceRoot(), m_instance->name());
+	upgradeDeprecatedFiles(d->m_instance->instanceRoot(), d->m_instance->name());
 	auto addBuiltinPatch = [&](const QString &uid, const QString intendedVersion, int order)
 	{
-		auto jsonFilePath = FS::PathCombine(m_instance->instanceRoot(), "patches" , uid + ".json");
+		auto jsonFilePath = FS::PathCombine(d->m_instance->instanceRoot(), "patches" , uid + ".json");
 		// load up the base minecraft patch
 		ProfilePatchPtr profilePatch;
 		if(QFile::exists(jsonFilePath))
@@ -487,7 +513,7 @@ void ComponentList::loadLegacy()
 
 	// first, collect all patches (that are not builtins of OneSix) and load them
 	QMap<QString, ProfilePatchPtr> loadedPatches;
-	QDir patchesDir(FS::PathCombine(m_instance->instanceRoot(),"patches"));
+	QDir patchesDir(FS::PathCombine(d->m_instance->instanceRoot(),"patches"));
 	for (auto info : patchesDir.entryInfoList(QStringList() << "*.json", QDir::Files))
 	{
 		// parse the file
@@ -527,7 +553,7 @@ void ComponentList::loadLegacy()
 
 	// now add all the patches by user sort order
 	ProfileUtils::PatchOrder userOrder;
-	ProfileUtils::readOverrideOrders(FS::PathCombine(m_instance->instanceRoot(), "order.json"), userOrder);
+	ProfileUtils::readOverrideOrders(FS::PathCombine(d->m_instance->instanceRoot(), "order.json"), userOrder);
 	for (auto uid : userOrder)
 	{
 		// ignore builtins
@@ -575,26 +601,29 @@ void ComponentList::loadLegacy()
 
 void ComponentList::load()
 {
-	clearPatches();
-	QFile componentsFile(FS::PathCombine(m_instance->instanceRoot(), "components.json"));
+	// FIXME: actually use fine-grained updates, not this...
+	beginResetModel();
+	d->m_patches.clear();
+	endResetModel();
+	QFile componentsFile(FS::PathCombine(d->m_instance->instanceRoot(), "mmc-pack.json"));
 	if(componentsFile.exists())
 	{
 		// well, nothing yet...
 	}
 	else
 	{
-		loadLegacy();
+		loadPreComponentConfig();
 	}
 }
 
 bool ComponentList::saveOrder_internal(ProfileUtils::PatchOrder order) const
 {
-	return ProfileUtils::writeOverrideOrders(FS::PathCombine(m_instance->instanceRoot(), "order.json"), order);
+	return ProfileUtils::writeOverrideOrders(FS::PathCombine(d->m_instance->instanceRoot(), "order.json"), order);
 }
 
 bool ComponentList::resetOrder_internal()
 {
-	return QDir(m_instance->instanceRoot()).remove("order.json");
+	return QDir(d->m_instance->instanceRoot()).remove("order.json");
 }
 
 bool ComponentList::removePatch_internal(ProfilePatchPtr patch)
@@ -624,7 +653,7 @@ bool ComponentList::removePatch_internal(ProfilePatchPtr patch)
 			return true;
 		}
 		QStringList jar, temp1, temp2, temp3;
-		jarMod->getApplicableFiles(currentSystem, jar, temp1, temp2, temp3, m_instance->jarmodsPath().absolutePath());
+		jarMod->getApplicableFiles(currentSystem, jar, temp1, temp2, temp3, d->m_instance->jarmodsPath().absolutePath());
 		QFileInfo finfo (jar[0]);
 		if(finfo.exists())
 		{
@@ -654,7 +683,7 @@ bool ComponentList::customizePatch_internal(ProfilePatchPtr patch)
 		return false;
 	}
 
-	auto filename = FS::PathCombine(m_instance->instanceRoot(), "patches" , patch->getID() + ".json");
+	auto filename = FS::PathCombine(d->m_instance->instanceRoot(), "patches" , patch->getID() + ".json");
 	if(!FS::ensureFilePathExists(filename))
 	{
 		return false;
@@ -716,13 +745,13 @@ bool ComponentList::revertPatch_internal(ProfilePatchPtr patch)
 
 bool ComponentList::installJarMods_internal(QStringList filepaths)
 {
-	QString patchDir = FS::PathCombine(m_instance->instanceRoot(), "patches");
+	QString patchDir = FS::PathCombine(d->m_instance->instanceRoot(), "patches");
 	if(!FS::ensureFolderPathExists(patchDir))
 	{
 		return false;
 	}
 
-	if (!FS::ensureFolderPathExists(m_instance->jarModsDir()))
+	if (!FS::ensureFolderPathExists(d->m_instance->jarModsDir()))
 	{
 		return false;
 	}
@@ -735,7 +764,7 @@ bool ComponentList::installJarMods_internal(QStringList filepaths)
 		QString target_filename = id + ".jar";
 		QString target_id = "org.multimc.jarmod." + id;
 		QString target_name = sourceInfo.completeBaseName() + " (jar mod)";
-		QString finalPath = FS::PathCombine(m_instance->jarModsDir(), target_filename);
+		QString finalPath = FS::PathCombine(d->m_instance->jarModsDir(), target_filename);
 
 		QFileInfo targetInfo(finalPath);
 		if(targetInfo.exists())
@@ -782,13 +811,13 @@ bool ComponentList::installJarMods_internal(QStringList filepaths)
 
 bool ComponentList::installCustomJar_internal(QString filepath)
 {
-	QString patchDir = FS::PathCombine(m_instance->instanceRoot(), "patches");
+	QString patchDir = FS::PathCombine(d->m_instance->instanceRoot(), "patches");
 	if(!FS::ensureFolderPathExists(patchDir))
 	{
 		return false;
 	}
 
-	QString libDir = m_instance->getLocalLibraryPath();
+	QString libDir = d->m_instance->getLocalLibraryPath();
 	if (!FS::ensureFolderPathExists(libDir))
 	{
 		return false;
@@ -847,21 +876,16 @@ bool ComponentList::installCustomJar_internal(QString filepath)
 
 std::shared_ptr<LaunchProfile> ComponentList::getProfile() const
 {
-	return m_profile;
+	return d->m_profile;
 }
 
-void ComponentList::clearProfile()
-{
-	m_profile.reset();
-}
-
-void ComponentList::suggestVersion(const QString& uid, const QString& version)
+void ComponentList::setOldConfigVersion(const QString& uid, const QString& version)
 {
 	if(version.isEmpty())
 	{
 		return;
 	}
-	m_suggestedVersions[uid] = version;
+	d->m_oldConfigVersions[uid] = version;
 }
 
 bool ComponentList::setComponentVersion(const QString& uid, const QString& version)
@@ -871,8 +895,8 @@ bool ComponentList::setComponentVersion(const QString& uid, const QString& versi
 
 QString ComponentList::getComponentVersion(const QString& uid) const
 {
-	const auto iter = m_suggestedVersions.find(uid);
-	if (iter != m_suggestedVersions.end())
+	const auto iter = d->m_oldConfigVersions.find(uid);
+	if (iter != d->m_oldConfigVersions.end())
 	{
 		return (*iter).second;
 	}

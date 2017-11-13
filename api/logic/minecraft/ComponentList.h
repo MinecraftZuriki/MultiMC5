@@ -30,7 +30,7 @@
 #include "multimc_logic_export.h"
 
 class MinecraftInstance;
-
+struct ComponentListData;
 
 class MULTIMC_LOGIC_EXPORT ComponentList : public QAbstractListModel
 {
@@ -58,9 +58,6 @@ public:
 	/// install a jar/zip as a replacement for the main jar
 	void installCustomJar(QString selectedFile);
 
-	/// DEPRECATED, remove ASAP
-	int getFreeOrderNumber();
-
 	enum MoveDirection { MoveUp, MoveDown };
 	/// move patch file # up or down the list
 	void move(const int index, const MoveDirection direction);
@@ -80,14 +77,10 @@ public:
 	/// reload all profile patches from storage, clear the profile and apply the patches
 	void reload();
 
-	/// apply the patches. Catches all the errors and returns true/false for success/failure
-	bool reapplyPatches();
-
 	std::shared_ptr<LaunchProfile> getProfile() const;
-	void clearProfile();
 
 	// NOTE: used ONLY by MinecraftInstance to provide legacy version mappings from instance config
-	void suggestVersion(const QString &uid, const QString &version);
+	void setOldConfigVersion(const QString &uid, const QString &version);
 
 	QString getComponentVersion(const QString &uid) const;
 
@@ -103,11 +96,14 @@ private:
 	/// save the current patch order
 	void saveCurrentOrder() const;
 
-	/// Remove all the patches
-	void clearPatches();
+	/// apply the patches. Catches all the errors and returns true/false for success/failure
+	bool reapplyPatches();
 
 	/// Add the patch object to the internal list of patches
 	void appendPatch(ProfilePatchPtr patch);
+
+	/// DEPRECATED, remove ASAP
+	int getFreeOrderNumber();
 
 private:
 	void load();
@@ -118,16 +114,9 @@ private:
 	bool removePatch_internal(ProfilePatchPtr patch);
 	bool customizePatch_internal(ProfilePatchPtr patch);
 	bool revertPatch_internal(ProfilePatchPtr patch);
-	void loadLegacy();
+	void loadPreComponentConfig();
 
 private: /* data */
-	/// list of attached profile patches
-	QList<ProfilePatchPtr> m_patches;
 
-	// the instance this belongs to
-	MinecraftInstance *m_instance;
-
-	std::shared_ptr<LaunchProfile> m_profile;
-
-	std::map<QString, QString> m_suggestedVersions;
+	std::unique_ptr<ComponentListData> d;
 };

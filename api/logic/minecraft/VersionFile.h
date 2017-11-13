@@ -90,8 +90,11 @@ public: /* data */
 	/// MultiMC: list of mods added to this version
 	QList<LibraryPtr> mods;
 
-	/// MultiMC: set of packages this depends on
-	QSet<Meta::Require> m_requires;
+	/*
+	 * MultiMC: set of packages this depends on.
+	 * NOTE: this is shared with the meta format!!!
+	 */
+	QSet<Meta::Require> requires;
 
 public:
 	// Mojang: DEPRECATED list of 'downloads' - client jar, server jar, windows server exe, maybe more.

@@ -5,6 +5,7 @@
 #include <QJsonDocument>
 #include <QDateTime>
 #include "ProblemProvider.h"
+#include "multimc_logic_export.h"
 
 class ComponentList;
 class LaunchProfile;
@@ -15,35 +16,35 @@ namespace Meta
 }
 class VersionFile;
 
-class ProfilePatch : public ProblemProvider
+class MULTIMC_LOGIC_EXPORT ProfilePatch : public ProblemProvider
 {
 public:
 	ProfilePatch(std::shared_ptr<Meta::Version> version);
 	ProfilePatch(std::shared_ptr<VersionFile> file, const QString &filename = QString());
 
 	virtual ~ProfilePatch(){};
-	virtual void applyTo(LaunchProfile *profile);
+	void applyTo(LaunchProfile *profile);
 
-	virtual bool isMoveable();
-	virtual bool isCustomizable();
-	virtual bool isRevertible();
-	virtual bool isRemovable();
-	virtual bool isCustom();
-	virtual bool isVersionChangeable();
+	bool isMoveable();
+	bool isCustomizable();
+	bool isRevertible();
+	bool isRemovable();
+	bool isCustom();
+	bool isVersionChangeable();
 
-	virtual void setOrder(int order);
-	virtual int getOrder();
+	void setOrder(int order);
+	int getOrder();
 
-	virtual QString getID();
-	virtual QString getName();
-	virtual QString getVersion();
-	virtual std::shared_ptr<Meta::Version> getMeta();
-	virtual QDateTime getReleaseDateTime();
+	QString getID();
+	QString getName();
+	QString getVersion();
+	std::shared_ptr<Meta::Version> getMeta();
+	QDateTime getReleaseDateTime();
 
-	virtual QString getFilename();
+	QString getFilename();
 
-	virtual std::shared_ptr<class VersionFile> getVersionFile() const;
-	virtual std::shared_ptr<class Meta::VersionList> getVersionList() const;
+	std::shared_ptr<class VersionFile> getVersionFile() const;
+	std::shared_ptr<class Meta::VersionList> getVersionList() const;
 
 	void setVanilla (bool state);
 	void setRemovable (bool state);

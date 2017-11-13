@@ -103,15 +103,11 @@ MinecraftInstance::MinecraftInstance(SettingsObjectPtr globalSettings, SettingsO
 	m_settings->registerSetting("LiteloaderVersion", QString());
 
 	m_components.reset(new ComponentList(this));
-	m_components->suggestVersion("net.minecraft", m_settings->get("IntendedVersion").toString());
+	m_components->setOldConfigVersion("net.minecraft", m_settings->get("IntendedVersion").toString());
 	auto setting = m_settings->getSetting("LWJGLVersion");
-	// only respect this when this is not default
-	if(setting->defValue() != setting->get())
-	{
-		m_components->suggestVersion("org.lwjgl", m_settings->get("LWJGLVersion").toString());
-	}
-	m_components->suggestVersion("net.minecraftforge", m_settings->get("ForgeVersion").toString());
-	m_components->suggestVersion("com.mumfrey.liteloader", m_settings->get("LiteloaderVersion").toString());
+	m_components->setOldConfigVersion("org.lwjgl", m_settings->get("LWJGLVersion").toString());
+	m_components->setOldConfigVersion("net.minecraftforge", m_settings->get("ForgeVersion").toString());
+	m_components->setOldConfigVersion("com.mumfrey.liteloader", m_settings->get("LiteloaderVersion").toString());
 }
 
 void MinecraftInstance::init()

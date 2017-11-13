@@ -192,6 +192,11 @@ VersionFilePtr OneSixVersionFormat::versionFileFromJson(const QJsonDocument &doc
 		out->mainJar = lib;
 	}
 
+	if (root.contains("requires"))
+	{
+		Meta::parseRequires(root, &out->requires);
+	}
+
 	/* removed features that shouldn't be used */
 	if (root.contains("tweakers"))
 	{
@@ -265,6 +270,10 @@ QJsonDocument OneSixVersionFormat::versionFileToJson(const VersionFilePtr &patch
 			array.append(OneSixVersionFormat::modtoJson(value.get()));
 		}
 		root.insert("mods", array);
+	}
+	if(!patch->requires.isEmpty())
+	{
+		Meta::serializeRequires(root, &patch->requires);
 	}
 	// write the contents to a json document.
 	{
