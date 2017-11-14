@@ -262,19 +262,6 @@ void VersionPage::on_jarBtn_clicked()
 	updateButtons();
 }
 
-void VersionPage::on_resetOrderBtn_clicked()
-{
-	try
-	{
-		m_profile->resetOrder();
-	}
-	catch (Exception &e)
-	{
-		QMessageBox::critical(this, tr("Error"), e.cause());
-	}
-	updateButtons();
-}
-
 void VersionPage::on_moveUpBtn_clicked()
 {
 	try

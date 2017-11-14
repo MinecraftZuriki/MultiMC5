@@ -53,7 +53,6 @@ private slots:
 	void on_liteloaderBtn_clicked();
 	void on_reloadBtn_clicked();
 	void on_removeBtn_clicked();
-	void on_resetOrderBtn_clicked();
 	void on_moveUpBtn_clicked();
 	void on_moveDownBtn_clicked();
 	void on_jarmodBtn_clicked();

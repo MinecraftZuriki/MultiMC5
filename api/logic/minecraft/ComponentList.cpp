@@ -551,18 +551,6 @@ int ComponentList::columnCount(const QModelIndex &parent) const
 	return 2;
 }
 
-void ComponentList::saveCurrentOrder() const
-{
-	ProfileUtils::PatchOrder order;
-	for(auto item: d->components)
-	{
-		if(!item->isMoveable())
-			continue;
-		order.append(item->getID());
-	}
-	saveOrder_internal(order);
-}
-
 void ComponentList::move(const int index, const MoveDirection direction)
 {
 	int theirIndex;
@@ -597,11 +585,6 @@ void ComponentList::move(const int index, const MoveDirection direction)
 	endMoveRows();
 	reapplyPatches();
 	scheduleSave();
-}
-void ComponentList::resetOrder()
-{
-	resetOrder_internal();
-	reload();
 }
 
 // FIXME: this should either erase the current launch profile or mark it as dirty in some way
@@ -650,16 +633,6 @@ int ComponentList::getFreeOrderNumber()
 			largest = order;
 	}
 	return largest + 1;
-}
-
-bool ComponentList::saveOrder_internal(ProfileUtils::PatchOrder order) const
-{
-	return ProfileUtils::writeOverrideOrders(FS::PathCombine(d->m_instance->instanceRoot(), "order.json"), order);
-}
-
-bool ComponentList::resetOrder_internal()
-{
-	return QDir(d->m_instance->instanceRoot()).remove("order.json");
 }
 
 bool ComponentList::removeComponent_internal(ComponentPtr patch)

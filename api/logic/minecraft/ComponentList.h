@@ -72,8 +72,6 @@ public:
 
 	bool revertToBase(int index);
 
-	void resetOrder();
-
 	/// reload all components from storage, clear the profile and apply the component patches
 	void reload();
 
@@ -96,9 +94,6 @@ private:
 	void scheduleSave();
 	bool saveIsScheduled() const;
 
-	/// save the current component order
-	void saveCurrentOrder() const;
-
 	/// apply the component patches. Catches all the errors and returns true/false for success/failure
 	bool reapplyPatches();
 
@@ -113,8 +108,6 @@ private slots:
 
 private:
 	void load();
-	bool resetOrder_internal();
-	bool saveOrder_internal(ProfileUtils::PatchOrder order) const;
 	bool installJarMods_internal(QStringList filepaths);
     bool installCustomJar_internal(QString filepath);
 	bool removeComponent_internal(ComponentPtr patch);
