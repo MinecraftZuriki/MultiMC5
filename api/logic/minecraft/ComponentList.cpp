@@ -30,7 +30,7 @@
 #include <meta/Index.h>
 #include <minecraft/MinecraftInstance.h>
 #include <QUuid>
-
+/*
 struct Component
 {
 	QString uid;
@@ -44,11 +44,11 @@ struct Component
 	QDateTime fileTimestamp;
 };
 using ComponentPtr = std::unique_ptr<Component>;
-
+*/
 struct ComponentListData
 {
 	/// list of attached profile patches
-	QList<ProfilePatchPtr> m_patches;
+	QList<ComponentPtr> m_patches;
 
 	// the instance this belongs to
 	MinecraftInstance *m_instance;
@@ -66,6 +66,7 @@ struct ComponentListData
 ComponentList::ComponentList(MinecraftInstance * instance)
 	: QAbstractListModel()
 {
+	d.reset(new ComponentListData);
 	d->m_instance = instance;
 }
 
@@ -81,7 +82,7 @@ void ComponentList::reload()
 	endResetModel();
 }
 
-void ComponentList::appendPatch(ProfilePatchPtr patch)
+void ComponentList::appendPatch(ComponentPtr patch)
 {
 	int index = d->m_patches.size();
 	beginInsertRows(QModelIndex(), index, index);
@@ -91,14 +92,14 @@ void ComponentList::appendPatch(ProfilePatchPtr patch)
 
 bool ComponentList::remove(const int index)
 {
-	auto patch = versionPatch(index);
+	auto patch = getComponent(index);
 	if (!patch->isRemovable())
 	{
 		qDebug() << "Patch" << patch->getID() << "is non-removable";
 		return false;
 	}
 
-	if(!removePatch_internal(patch))
+	if(!removeComponent_internal(patch))
 	{
 		qCritical() << "Patch" << patch->getID() << "could not be removed";
 		return false;
@@ -128,13 +129,13 @@ bool ComponentList::remove(const QString id)
 
 bool ComponentList::customize(int index)
 {
-	auto patch = versionPatch(index);
+	auto patch = getComponent(index);
 	if (!patch->isCustomizable())
 	{
 		qDebug() << "Patch" << patch->getID() << "is not customizable";
 		return false;
 	}
-	if(!customizePatch_internal(patch))
+	if(!customizeComponent_internal(patch))
 	{
 		qCritical() << "Patch" << patch->getID() << "could not be customized";
 		return false;
@@ -148,13 +149,13 @@ bool ComponentList::customize(int index)
 
 bool ComponentList::revertToBase(int index)
 {
-	auto patch = versionPatch(index);
+	auto patch = getComponent(index);
 	if (!patch->isRevertible())
 	{
 		qDebug() << "Patch" << patch->getID() << "is not revertible";
 		return false;
 	}
-	if(!revertPatch_internal(patch))
+	if(!revertComponent_internal(patch))
 	{
 		qCritical() << "Patch" << patch->getID() << "could not be reverted";
 		return false;
@@ -166,7 +167,7 @@ bool ComponentList::revertToBase(int index)
 	return true;
 }
 
-ProfilePatchPtr ComponentList::versionPatch(const QString &id)
+ComponentPtr ComponentList::getComponent(const QString &id)
 {
 	for (auto patch : d->m_patches)
 	{
@@ -178,7 +179,7 @@ ProfilePatchPtr ComponentList::versionPatch(const QString &id)
 	return nullptr;
 }
 
-ProfilePatchPtr ComponentList::versionPatch(int index)
+ComponentPtr ComponentList::getComponent(int index)
 {
 	if(index < 0 || index >= d->m_patches.size())
 		return nullptr;
@@ -350,8 +351,8 @@ void ComponentList::move(const int index, const MoveDirection direction)
 		return;
 	int togap = theirIndex > index ? theirIndex + 1 : theirIndex;
 
-	auto from = versionPatch(index);
-	auto to = versionPatch(theirIndex);
+	auto from = getComponent(index);
+	auto to = getComponent(theirIndex);
 
 	if (!from || !to || !to->isMoveable() || !from->isMoveable())
 	{
@@ -487,7 +488,7 @@ void ComponentList::loadPreComponentConfig()
 	{
 		auto jsonFilePath = FS::PathCombine(d->m_instance->instanceRoot(), "patches" , uid + ".json");
 		// load up the base minecraft patch
-		ProfilePatchPtr profilePatch;
+		ComponentPtr profilePatch;
 		if(QFile::exists(jsonFilePath))
 		{
 			auto file = ProfileUtils::parseJsonFile(QFileInfo(jsonFilePath), false);
@@ -495,14 +496,14 @@ void ComponentList::loadPreComponentConfig()
 			{
 				file->version = intendedVersion;
 			}
-			profilePatch = std::make_shared<ProfilePatch>(file, jsonFilePath);
+			profilePatch = std::make_shared<Component>(file, jsonFilePath);
 			profilePatch->setVanilla(false);
 			profilePatch->setRevertible(true);
 		}
 		else
 		{
 			auto metaVersion = ENV.metadataIndex()->get(uid, intendedVersion);
-			profilePatch = std::make_shared<ProfilePatch>(metaVersion);
+			profilePatch = std::make_shared<Component>(metaVersion);
 			profilePatch->setVanilla(true);
 		}
 		profilePatch->setOrder(order);
@@ -512,7 +513,7 @@ void ComponentList::loadPreComponentConfig()
 	addBuiltinPatch("org.lwjgl", getComponentVersion("org.lwjgl"), -1);
 
 	// first, collect all patches (that are not builtins of OneSix) and load them
-	QMap<QString, ProfilePatchPtr> loadedPatches;
+	QMap<QString, ComponentPtr> loadedPatches;
 	QDir patchesDir(FS::PathCombine(d->m_instance->instanceRoot(),"patches"));
 	for (auto info : patchesDir.entryInfoList(QStringList() << "*.json", QDir::Files))
 	{
@@ -524,7 +525,7 @@ void ComponentList::loadPreComponentConfig()
 			continue;
 		if (file->uid == "org.lwjgl")
 			continue;
-		auto patch = std::make_shared<ProfilePatch>(file, info.filePath());
+		auto patch = std::make_shared<Component>(file, info.filePath());
 		patch->setRemovable(true);
 		patch->setMovable(true);
 		if(ENV.metadataIndex()->hasUid(file->uid))
@@ -540,7 +541,7 @@ void ComponentList::loadPreComponentConfig()
 		auto patchVersion = getComponentVersion(uid);
 		if(!patchVersion.isEmpty() && !loadedPatches.contains(uid))
 		{
-			auto patch = std::make_shared<ProfilePatch>(ENV.metadataIndex()->get(uid, patchVersion));
+			auto patch = std::make_shared<Component>(ENV.metadataIndex()->get(uid, patchVersion));
 			patch->setOrder(order);
 			patch->setVanilla(true);
 			patch->setRemovable(true);
@@ -577,7 +578,7 @@ void ComponentList::loadPreComponentConfig()
 	}
 
 	// inserting into multimap by order number as key sorts the patches and detects duplicates
-	QMultiMap<int, ProfilePatchPtr> files;
+	QMultiMap<int, ComponentPtr> files;
 	auto iter = loadedPatches.begin();
 	while(iter != loadedPatches.end())
 	{
@@ -626,7 +627,7 @@ bool ComponentList::resetOrder_internal()
 	return QDir(d->m_instance->instanceRoot()).remove("order.json");
 }
 
-bool ComponentList::removePatch_internal(ProfilePatchPtr patch)
+bool ComponentList::removeComponent_internal(ComponentPtr patch)
 {
 	bool ok = true;
 	// first, remove the patch file. this ensures it's not used anymore
@@ -676,7 +677,7 @@ bool ComponentList::removePatch_internal(ProfilePatchPtr patch)
 	return ok;
 }
 
-bool ComponentList::customizePatch_internal(ProfilePatchPtr patch)
+bool ComponentList::customizeComponent_internal(ComponentPtr patch)
 {
 	if(patch->isCustom())
 	{
@@ -716,7 +717,7 @@ bool ComponentList::customizePatch_internal(ProfilePatchPtr patch)
 	return true;
 }
 
-bool ComponentList::revertPatch_internal(ProfilePatchPtr patch)
+bool ComponentList::revertComponent_internal(ComponentPtr patch)
 {
 	if(!patch->isCustom())
 	{
@@ -799,7 +800,7 @@ bool ComponentList::installJarMods_internal(QStringList filepaths)
 		file.write(OneSixVersionFormat::versionFileToJson(f, true).toJson());
 		file.close();
 
-		auto patch = std::make_shared<ProfilePatch>(f, patchFileName);
+		auto patch = std::make_shared<Component>(f, patchFileName);
 		patch->setMovable(true);
 		patch->setRemovable(true);
 		appendPatch(patch);
@@ -864,7 +865,7 @@ bool ComponentList::installCustomJar_internal(QString filepath)
 	file.write(OneSixVersionFormat::versionFileToJson(f, true).toJson());
 	file.close();
 
-	auto patch = std::make_shared<ProfilePatch>(f, patchFileName);
+	auto patch = std::make_shared<Component>(f, patchFileName);
 	patch->setMovable(true);
 	patch->setRemovable(true);
 	appendPatch(patch);

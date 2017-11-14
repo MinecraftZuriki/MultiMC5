@@ -142,7 +142,7 @@ void VersionPage::packageCurrent(const QModelIndex &current, const QModelIndex &
 		return;
 	}
 	int row = current.row();
-	auto patch = m_profile->versionPatch(row);
+	auto patch = m_profile->getComponent(row);
 	auto severity = patch->getProblemSeverity();
 	switch(severity)
 	{
@@ -308,7 +308,7 @@ void VersionPage::on_changeVersionBtn_clicked()
 	{
 		return;
 	}
-	auto patch = m_profile->versionPatch(versionRow);
+	auto patch = m_profile->getComponent(versionRow);
 	auto name = patch->getName();
 	auto list = patch->getVersionList();
 	if(!list)
@@ -479,7 +479,7 @@ void VersionPage::updateButtons(int row)
 {
 	if(row == -1)
 		row = currentRow();
-	auto patch = m_profile->versionPatch(row);
+	auto patch = m_profile->getComponent(row);
 	if (!patch)
 	{
 		ui->removeBtn->setDisabled(true);
@@ -508,14 +508,14 @@ void VersionPage::onGameUpdateError(QString error)
 								 QMessageBox::Warning)->show();
 }
 
-ProfilePatchPtr VersionPage::current()
+ComponentPtr VersionPage::current()
 {
 	auto row = currentRow();
 	if(row < 0)
 	{
 		return nullptr;
 	}
-	return m_profile->versionPatch(row);
+	return m_profile->getComponent(row);
 }
 
 int VersionPage::currentRow()
@@ -534,7 +534,7 @@ void VersionPage::on_customizeBtn_clicked()
 	{
 		return;
 	}
-	auto patch = m_profile->versionPatch(version);
+	auto patch = m_profile->getComponent(version);
 	if(!patch->getVersionFile())
 	{
 		// TODO: wait for the update task to finish here...

@@ -239,6 +239,8 @@ set(MINECRAFT_SOURCES
 	minecraft/MinecraftInstance.h
 	minecraft/LaunchProfile.cpp
 	minecraft/LaunchProfile.h
+	minecraft/Component.cpp
+	minecraft/Component.h
 	minecraft/ComponentList.cpp
 	minecraft/ComponentList.h
 	minecraft/MinecraftUpdate.h
@@ -260,8 +262,6 @@ set(MINECRAFT_SOURCES
 	minecraft/MojangDownloadInfo.h
 	minecraft/VersionFile.cpp
 	minecraft/VersionFile.h
-	minecraft/ProfilePatch.cpp
-	minecraft/ProfilePatch.h
 	minecraft/VersionFilterData.h
 	minecraft/VersionFilterData.cpp
 	minecraft/Mod.h

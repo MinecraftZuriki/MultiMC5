@@ -1,28 +1,28 @@
 #include <meta/VersionList.h>
 #include <meta/Index.h>
 #include <Env.h>
-#include "ProfilePatch.h"
+#include "Component.h"
 
 #include "meta/Version.h"
 #include "VersionFile.h"
 #include "minecraft/ComponentList.h"
 
-ProfilePatch::ProfilePatch(std::shared_ptr<Meta::Version> version)
+Component::Component(std::shared_ptr<Meta::Version> version)
 	:m_metaVersion(version)
 {
 }
 
-ProfilePatch::ProfilePatch(std::shared_ptr<VersionFile> file, const QString& filename)
+Component::Component(std::shared_ptr<VersionFile> file, const QString& filename)
 	:m_file(file), m_filename(filename)
 {
 }
 
-std::shared_ptr<Meta::Version> ProfilePatch::getMeta()
+std::shared_ptr<Meta::Version> Component::getMeta()
 {
 	return m_metaVersion;
 }
 
-void ProfilePatch::applyTo(LaunchProfile* profile)
+void Component::applyTo(LaunchProfile* profile)
 {
 	auto vfile = getVersionFile();
 	if(vfile)
@@ -35,7 +35,7 @@ void ProfilePatch::applyTo(LaunchProfile* profile)
 	}
 }
 
-std::shared_ptr<class VersionFile> ProfilePatch::getVersionFile() const
+std::shared_ptr<class VersionFile> Component::getVersionFile() const
 {
 	if(m_metaVersion)
 	{
@@ -51,7 +51,7 @@ std::shared_ptr<class VersionFile> ProfilePatch::getVersionFile() const
 	}
 }
 
-std::shared_ptr<class Meta::VersionList> ProfilePatch::getVersionList() const
+std::shared_ptr<class Meta::VersionList> Component::getVersionList() const
 {
 	if(m_metaVersion)
 	{
@@ -60,7 +60,7 @@ std::shared_ptr<class Meta::VersionList> ProfilePatch::getVersionList() const
 	return nullptr;
 }
 
-int ProfilePatch::getOrder()
+int Component::getOrder()
 {
 	if(m_orderOverride)
 		return m_order;
@@ -72,34 +72,34 @@ int ProfilePatch::getOrder()
 	}
 	return 0;
 }
-void ProfilePatch::setOrder(int order)
+void Component::setOrder(int order)
 {
 	m_orderOverride = true;
 	m_order = order;
 }
-QString ProfilePatch::getID()
+QString Component::getID()
 {
 	if(m_metaVersion)
 		return m_metaVersion->uid();
 	return getVersionFile()->uid;
 }
-QString ProfilePatch::getName()
+QString Component::getName()
 {
 	if(m_metaVersion)
 		return m_metaVersion->name();
 	return getVersionFile()->name;
 }
-QString ProfilePatch::getVersion()
+QString Component::getVersion()
 {
 	if(m_metaVersion)
 		return m_metaVersion->version();
 	return getVersionFile()->version;
 }
-QString ProfilePatch::getFilename()
+QString Component::getFilename()
 {
 	return m_filename;
 }
-QDateTime ProfilePatch::getReleaseDateTime()
+QDateTime Component::getReleaseDateTime()
 {
 	if(m_metaVersion)
 	{
@@ -108,12 +108,12 @@ QDateTime ProfilePatch::getReleaseDateTime()
 	return getVersionFile()->releaseTime;
 }
 
-bool ProfilePatch::isCustom()
+bool Component::isCustom()
 {
 	return !m_isVanilla;
 };
 
-bool ProfilePatch::isCustomizable()
+bool Component::isCustomizable()
 {
 	if(m_metaVersion)
 	{
@@ -124,19 +124,19 @@ bool ProfilePatch::isCustomizable()
 	}
 	return false;
 }
-bool ProfilePatch::isRemovable()
+bool Component::isRemovable()
 {
 	return m_isRemovable;
 }
-bool ProfilePatch::isRevertible()
+bool Component::isRevertible()
 {
 	return m_isRevertible;
 }
-bool ProfilePatch::isMoveable()
+bool Component::isMoveable()
 {
 	return m_isMovable;
 }
-bool ProfilePatch::isVersionChangeable()
+bool Component::isVersionChangeable()
 {
 	auto list = getVersionList();
 	if(list)
@@ -150,24 +150,24 @@ bool ProfilePatch::isVersionChangeable()
 	return false;
 }
 
-void ProfilePatch::setVanilla (bool state)
+void Component::setVanilla (bool state)
 {
 	m_isVanilla = state;
 }
-void ProfilePatch::setRemovable (bool state)
+void Component::setRemovable (bool state)
 {
 	m_isRemovable = state;
 }
-void ProfilePatch::setRevertible (bool state)
+void Component::setRevertible (bool state)
 {
 	m_isRevertible = state;
 }
-void ProfilePatch::setMovable (bool state)
+void Component::setMovable (bool state)
 {
 	m_isMovable = state;
 }
 
-ProblemSeverity ProfilePatch::getProblemSeverity() const
+ProblemSeverity Component::getProblemSeverity() const
 {
 	auto file = getVersionFile();
 	if(file)
@@ -177,7 +177,7 @@ ProblemSeverity ProfilePatch::getProblemSeverity() const
 	return ProblemSeverity::Error;
 }
 
-const QList<PatchProblem> ProfilePatch::getProblems() const
+const QList<PatchProblem> Component::getProblems() const
 {
 	auto file = getVersionFile();
 	if(file)

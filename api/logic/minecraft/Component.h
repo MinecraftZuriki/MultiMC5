@@ -16,13 +16,13 @@ namespace Meta
 }
 class VersionFile;
 
-class MULTIMC_LOGIC_EXPORT ProfilePatch : public ProblemProvider
+class MULTIMC_LOGIC_EXPORT Component : public ProblemProvider
 {
 public:
-	ProfilePatch(std::shared_ptr<Meta::Version> version);
-	ProfilePatch(std::shared_ptr<VersionFile> file, const QString &filename = QString());
+	Component(std::shared_ptr<Meta::Version> version);
+	Component(std::shared_ptr<VersionFile> file, const QString &filename = QString());
 
-	virtual ~ProfilePatch(){};
+	virtual ~Component(){};
 	void applyTo(LaunchProfile *profile);
 
 	bool isMoveable();
@@ -69,4 +69,4 @@ protected:
 	QString m_filename;
 };
 
-typedef std::shared_ptr<ProfilePatch> ProfilePatchPtr;
+typedef std::shared_ptr<Component> ComponentPtr;

@@ -56,7 +56,7 @@ OneSixUpdate::OneSixUpdate(MinecraftInstance *inst, QObject *parent) : Task(pare
 		m_inst->reloadProfile();
 		for(int i = 0; i < profile->rowCount(); i++)
 		{
-			auto patch = profile->versionPatch(i);
+			auto patch = profile->getComponent(i);
 			auto id = patch->getID();
 			auto metadata = patch->getMeta();
 			if(metadata)

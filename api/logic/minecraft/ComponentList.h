@@ -23,7 +23,7 @@
 
 #include "Library.h"
 #include "LaunchProfile.h"
-#include "ProfilePatch.h"
+#include "Component.h"
 #include "ProfileUtils.h"
 #include "BaseVersion.h"
 #include "MojangDownloadInfo.h"
@@ -59,13 +59,13 @@ public:
 	void installCustomJar(QString selectedFile);
 
 	enum MoveDirection { MoveUp, MoveDown };
-	/// move patch file # up or down the list
+	/// move component file # up or down the list
 	void move(const int index, const MoveDirection direction);
 
-	/// remove patch file # - including files/records
+	/// remove component file # - including files/records
 	bool remove(const int index);
 
-	/// remove patch file by id - including files/records
+	/// remove component file by id - including files/records
 	bool remove(const QString id);
 
 	bool customize(int index);
@@ -74,7 +74,7 @@ public:
 
 	void resetOrder();
 
-	/// reload all profile patches from storage, clear the profile and apply the patches
+	/// reload all components from storage, clear the profile and apply the component patches
 	void reload();
 
 	std::shared_ptr<LaunchProfile> getProfile() const;
@@ -86,21 +86,21 @@ public:
 
 	bool setComponentVersion(const QString &uid, const QString &version);
 public:
-	/// get the profile patch by id
-	ProfilePatchPtr versionPatch(const QString &id);
+	/// get the profile component by id
+	ComponentPtr getComponent(const QString &id);
 
-	/// get the profile patch by index
-	ProfilePatchPtr versionPatch(int index);
+	/// get the profile component by index
+	ComponentPtr getComponent(int index);
 
 private:
-	/// save the current patch order
+	/// save the current component order
 	void saveCurrentOrder() const;
 
-	/// apply the patches. Catches all the errors and returns true/false for success/failure
+	/// apply the component patches. Catches all the errors and returns true/false for success/failure
 	bool reapplyPatches();
 
-	/// Add the patch object to the internal list of patches
-	void appendPatch(ProfilePatchPtr patch);
+	/// Add the component to the internal list of patches
+	void appendPatch(ComponentPtr component);
 
 	/// DEPRECATED, remove ASAP
 	int getFreeOrderNumber();
@@ -111,9 +111,9 @@ private:
 	bool saveOrder_internal(ProfileUtils::PatchOrder order) const;
 	bool installJarMods_internal(QStringList filepaths);
     bool installCustomJar_internal(QString filepath);
-	bool removePatch_internal(ProfilePatchPtr patch);
-	bool customizePatch_internal(ProfilePatchPtr patch);
-	bool revertPatch_internal(ProfilePatchPtr patch);
+	bool removeComponent_internal(ComponentPtr patch);
+	bool customizeComponent_internal(ComponentPtr patch);
+	bool revertComponent_internal(ComponentPtr patch);
 	void loadPreComponentConfig();
 
 private: /* data */
