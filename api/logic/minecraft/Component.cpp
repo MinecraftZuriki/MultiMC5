@@ -10,11 +10,13 @@
 Component::Component(std::shared_ptr<Meta::Version> version)
 	:m_metaVersion(version)
 {
+	this->uid = version->uid();
 }
 
-Component::Component(std::shared_ptr<VersionFile> file, const QString& filename)
+Component::Component(const QString& uid, std::shared_ptr<VersionFile> file, const QString& filename)
 	:m_file(file), m_filename(filename)
 {
+	this->uid = uid;
 }
 
 std::shared_ptr<Meta::Version> Component::getMeta()
@@ -53,9 +55,10 @@ std::shared_ptr<class VersionFile> Component::getVersionFile() const
 
 std::shared_ptr<class Meta::VersionList> Component::getVersionList() const
 {
-	if(m_metaVersion)
+	// FIXME: what if the metadata index isn't loaded yet?
+	if(ENV.metadataIndex()->hasUid(uid))
 	{
-		return ENV.metadataIndex()->get(m_metaVersion->uid());
+		return ENV.metadataIndex()->get(uid);
 	}
 	return nullptr;
 }
@@ -79,21 +82,24 @@ void Component::setOrder(int order)
 }
 QString Component::getID()
 {
-	if(m_metaVersion)
-		return m_metaVersion->uid();
-	return getVersionFile()->uid;
+	return uid;
 }
 QString Component::getName()
 {
-	if(m_metaVersion)
-		return m_metaVersion->name();
-	return getVersionFile()->name;
+	if (!cachedName.isEmpty())
+		return cachedName;
+	return uid;
 }
 QString Component::getVersion()
 {
 	if(m_metaVersion)
 		return m_metaVersion->version();
-	return getVersionFile()->version;
+	auto vfile = getVersionFile();
+	if(vfile)
+	{
+		return vfile->version;
+	}
+	return currentVersion;
 }
 QString Component::getFilename()
 {
@@ -105,7 +111,13 @@ QDateTime Component::getReleaseDateTime()
 	{
 		return m_metaVersion->time();
 	}
-	return getVersionFile()->releaseTime;
+	auto vfile = getVersionFile();
+	if(vfile)
+	{
+		return vfile->releaseTime;
+	}
+	// FIXME: fake
+	return QDateTime::currentDateTime();
 }
 
 bool Component::isCustom()

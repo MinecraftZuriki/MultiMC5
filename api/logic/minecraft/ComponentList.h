@@ -93,6 +93,9 @@ public:
 	ComponentPtr getComponent(int index);
 
 private:
+	void scheduleSave();
+	bool saveIsScheduled() const;
+
 	/// save the current component order
 	void saveCurrentOrder() const;
 
@@ -104,6 +107,9 @@ private:
 
 	/// DEPRECATED, remove ASAP
 	int getFreeOrderNumber();
+
+private slots:
+	void save();
 
 private:
 	void load();

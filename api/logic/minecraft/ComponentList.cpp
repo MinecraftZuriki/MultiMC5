@@ -30,37 +30,24 @@
 #include <meta/Index.h>
 #include <minecraft/MinecraftInstance.h>
 #include <QUuid>
-/*
-struct Component
-{
-	QString uid;
-	QString cachedName;
-	QString currentVersion;
-	bool asDependency = false;
-	bool pinned = false;
-	// does this use a file?
-	bool usesFile = false;
-	// caching mechanism: do not reload file unless its timestamp has changed
-	QDateTime fileTimestamp;
-};
-using ComponentPtr = std::unique_ptr<Component>;
-*/
+#include <QTimer>
+
 struct ComponentListData
 {
-	/// list of attached profile patches
-	QList<ComponentPtr> m_patches;
-
 	// the instance this belongs to
 	MinecraftInstance *m_instance;
 
+	// the launch profile (volatile, temporary thing created on demand)
 	std::shared_ptr<LaunchProfile> m_profile;
 
-	// NOTE: This is here for conversion from instance.cfg only
+	// version information migrated from instance.cfg file. Single use on migration!
 	std::map<QString, QString> m_oldConfigVersions;
 
-	// persistent list of components
-	std::vector<ComponentPtr> components;
-	std::map<QString, size_t> componentIndex;
+	// persistent list of components and related machinery
+	QList<ComponentPtr> components;
+	QMap<QString, ComponentPtr> componentIndex;
+	bool dirty = false;
+	QTimer m_saveTimer;
 };
 
 ComponentList::ComponentList(MinecraftInstance * instance)
@@ -68,10 +55,60 @@ ComponentList::ComponentList(MinecraftInstance * instance)
 {
 	d.reset(new ComponentListData);
 	d->m_instance = instance;
+	d->m_saveTimer.setSingleShot(true);
+	d->m_saveTimer.setInterval(5000);
+	connect(&d->m_saveTimer, &QTimer::timeout, this, &ComponentList::save);
 }
 
 ComponentList::~ComponentList()
 {
+	if(saveIsScheduled())
+	{
+		d->m_saveTimer.stop();
+		save();
+	}
+}
+
+// BEGIN: save/load
+
+bool ComponentList::saveIsScheduled() const
+{
+	return d->dirty;
+}
+
+void ComponentList::scheduleSave()
+{
+	if(!d->dirty)
+	{
+		d->dirty = true;
+		qDebug() << "Component list save is scheduled for" << d->m_instance->name();
+	}
+	d->m_saveTimer.start();
+}
+
+void ComponentList::save()
+{
+	qDebug() << "Component list save would be performed now for" << d->m_instance->name();
+	d->dirty = false;
+	// TODO: implement
+}
+
+void ComponentList::load()
+{
+	// FIXME: actually use fine-grained updates, not this...
+	beginResetModel();
+	d->components.clear();
+	d->componentIndex.clear();
+	endResetModel();
+	QFile componentsFile(FS::PathCombine(d->m_instance->instanceRoot(), "mmc-pack.json"));
+	if(componentsFile.exists())
+	{
+		// well, nothing yet...
+	}
+	else
+	{
+		loadPreComponentConfig();
+	}
 }
 
 void ComponentList::reload()
@@ -80,342 +117,6 @@ void ComponentList::reload()
 	load();
 	reapplyPatches();
 	endResetModel();
-}
-
-void ComponentList::appendPatch(ComponentPtr patch)
-{
-	int index = d->m_patches.size();
-	beginInsertRows(QModelIndex(), index, index);
-	d->m_patches.append(patch);
-	endInsertRows();
-}
-
-bool ComponentList::remove(const int index)
-{
-	auto patch = getComponent(index);
-	if (!patch->isRemovable())
-	{
-		qDebug() << "Patch" << patch->getID() << "is non-removable";
-		return false;
-	}
-
-	if(!removeComponent_internal(patch))
-	{
-		qCritical() << "Patch" << patch->getID() << "could not be removed";
-		return false;
-	}
-
-	beginRemoveRows(QModelIndex(), index, index);
-	d->m_patches.removeAt(index);
-	endRemoveRows();
-	reapplyPatches();
-	saveCurrentOrder();
-	return true;
-}
-
-bool ComponentList::remove(const QString id)
-{
-	int i = 0;
-	for (auto patch : d->m_patches)
-	{
-		if (patch->getID() == id)
-		{
-			return remove(i);
-		}
-		i++;
-	}
-	return false;
-}
-
-bool ComponentList::customize(int index)
-{
-	auto patch = getComponent(index);
-	if (!patch->isCustomizable())
-	{
-		qDebug() << "Patch" << patch->getID() << "is not customizable";
-		return false;
-	}
-	if(!customizeComponent_internal(patch))
-	{
-		qCritical() << "Patch" << patch->getID() << "could not be customized";
-		return false;
-	}
-	reapplyPatches();
-	saveCurrentOrder();
-	// FIXME: maybe later in unstable
-	// emit dataChanged(createIndex(index, 0), createIndex(index, columnCount(QModelIndex()) - 1));
-	return true;
-}
-
-bool ComponentList::revertToBase(int index)
-{
-	auto patch = getComponent(index);
-	if (!patch->isRevertible())
-	{
-		qDebug() << "Patch" << patch->getID() << "is not revertible";
-		return false;
-	}
-	if(!revertComponent_internal(patch))
-	{
-		qCritical() << "Patch" << patch->getID() << "could not be reverted";
-		return false;
-	}
-	reapplyPatches();
-	saveCurrentOrder();
-	// FIXME: maybe later in unstable
-	// emit dataChanged(createIndex(index, 0), createIndex(index, columnCount(QModelIndex()) - 1));
-	return true;
-}
-
-ComponentPtr ComponentList::getComponent(const QString &id)
-{
-	for (auto patch : d->m_patches)
-	{
-		if (patch->getID() == id)
-		{
-			return patch;
-		}
-	}
-	return nullptr;
-}
-
-ComponentPtr ComponentList::getComponent(int index)
-{
-	if(index < 0 || index >= d->m_patches.size())
-		return nullptr;
-	return d->m_patches[index];
-}
-
-bool ComponentList::isVanilla()
-{
-	for(auto patchptr: d->m_patches)
-	{
-		if(patchptr->isCustom())
-			return false;
-	}
-	return true;
-}
-
-bool ComponentList::revertToVanilla()
-{
-	// remove patches, if present
-	auto VersionPatchesCopy = d->m_patches;
-	for(auto & it: VersionPatchesCopy)
-	{
-		if (!it->isCustom())
-		{
-			continue;
-		}
-		if(it->isRevertible() || it->isRemovable())
-		{
-			if(!remove(it->getID()))
-			{
-				qWarning() << "Couldn't remove" << it->getID() << "from profile!";
-				reapplyPatches();
-				saveCurrentOrder();
-				return false;
-			}
-		}
-	}
-	reapplyPatches();
-	saveCurrentOrder();
-	return true;
-}
-
-QVariant ComponentList::data(const QModelIndex &index, int role) const
-{
-	if (!index.isValid())
-		return QVariant();
-
-	int row = index.row();
-	int column = index.column();
-
-	if (row < 0 || row >= d->m_patches.size())
-		return QVariant();
-
-	auto patch = d->m_patches.at(row);
-
-	if (role == Qt::DisplayRole)
-	{
-		switch (column)
-		{
-		case 0:
-			return d->m_patches.at(row)->getName();
-		case 1:
-		{
-			if(patch->isCustom())
-			{
-				return QString("%1 (Custom)").arg(patch->getVersion());
-			}
-			else
-			{
-				return patch->getVersion();
-			}
-		}
-		default:
-			return QVariant();
-		}
-	}
-	if(role == Qt::DecorationRole)
-	{
-		switch(column)
-		{
-		case 0:
-		{
-			auto severity = patch->getProblemSeverity();
-			switch (severity)
-			{
-				case ProblemSeverity::Warning:
-					return "warning";
-				case ProblemSeverity::Error:
-					return "error";
-				default:
-					return QVariant();
-			}
-		}
-		default:
-		{
-			return QVariant();
-		}
-		}
-	}
-	return QVariant();
-}
-QVariant ComponentList::headerData(int section, Qt::Orientation orientation, int role) const
-{
-	if (orientation == Qt::Horizontal)
-	{
-		if (role == Qt::DisplayRole)
-		{
-			switch (section)
-			{
-			case 0:
-				return tr("Name");
-			case 1:
-				return tr("Version");
-			default:
-				return QVariant();
-			}
-		}
-	}
-	return QVariant();
-}
-Qt::ItemFlags ComponentList::flags(const QModelIndex &index) const
-{
-	if (!index.isValid())
-		return Qt::NoItemFlags;
-	return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
-}
-
-int ComponentList::rowCount(const QModelIndex &parent) const
-{
-	return d->m_patches.size();
-}
-
-int ComponentList::columnCount(const QModelIndex &parent) const
-{
-	return 2;
-}
-
-void ComponentList::saveCurrentOrder() const
-{
-	ProfileUtils::PatchOrder order;
-	for(auto item: d->m_patches)
-	{
-		if(!item->isMoveable())
-			continue;
-		order.append(item->getID());
-	}
-	saveOrder_internal(order);
-}
-
-void ComponentList::move(const int index, const MoveDirection direction)
-{
-	int theirIndex;
-	if (direction == MoveUp)
-	{
-		theirIndex = index - 1;
-	}
-	else
-	{
-		theirIndex = index + 1;
-	}
-
-	if (index < 0 || index >= d->m_patches.size())
-		return;
-	if (theirIndex >= rowCount())
-		theirIndex = rowCount() - 1;
-	if (theirIndex == -1)
-		theirIndex = rowCount() - 1;
-	if (index == theirIndex)
-		return;
-	int togap = theirIndex > index ? theirIndex + 1 : theirIndex;
-
-	auto from = getComponent(index);
-	auto to = getComponent(theirIndex);
-
-	if (!from || !to || !to->isMoveable() || !from->isMoveable())
-	{
-		return;
-	}
-	beginMoveRows(QModelIndex(), index, index, QModelIndex(), togap);
-	d->m_patches.swap(index, theirIndex);
-	endMoveRows();
-	reapplyPatches();
-	saveCurrentOrder();
-}
-void ComponentList::resetOrder()
-{
-	resetOrder_internal();
-	reload();
-}
-
-// FIXME: this should either erase the current launch profile or mark it as dirty in some way
-bool ComponentList::reapplyPatches()
-{
-	try
-	{
-		d->m_profile.reset(new LaunchProfile);
-		for(auto file: d->m_patches)
-		{
-			qDebug() << "Applying" << file->getID() << (file->getProblemSeverity() == ProblemSeverity::Error ? "ERROR" : "GOOD");
-			file->applyTo(d->m_profile.get());
-		}
-	}
-	catch (Exception & error)
-	{
-		d->m_profile.reset();
-		qWarning() << "Couldn't apply profile patches because: " << error.cause();
-		return false;
-	}
-	return true;
-}
-
-void ComponentList::installJarMods(QStringList selectedFiles)
-{
-	installJarMods_internal(selectedFiles);
-}
-
-void ComponentList::installCustomJar(QString selectedFile)
-{
-	installCustomJar_internal(selectedFile);
-}
-
-
-/*
- * TODO: get rid of this. Get rid of all order numbers.
- */
-int ComponentList::getFreeOrderNumber()
-{
-	int largest = 100;
-	// yes, I do realize this is dumb. The order thing itself is dumb. and to be removed next.
-	for(auto thing: d->m_patches)
-	{
-		int order = thing->getOrder();
-		if(order > largest)
-			largest = order;
-	}
-	return largest + 1;
 }
 
 // NOTE this is really old stuff, and only needs to be used when loading the old hardcoded component-unaware format (loadPreComponentConfig).
@@ -496,7 +197,7 @@ void ComponentList::loadPreComponentConfig()
 			{
 				file->version = intendedVersion;
 			}
-			profilePatch = std::make_shared<Component>(file, jsonFilePath);
+			profilePatch = std::make_shared<Component>(uid, file, jsonFilePath);
 			profilePatch->setVanilla(false);
 			profilePatch->setRevertible(true);
 		}
@@ -525,7 +226,7 @@ void ComponentList::loadPreComponentConfig()
 			continue;
 		if (file->uid == "org.lwjgl")
 			continue;
-		auto patch = std::make_shared<Component>(file, info.filePath());
+		auto patch = std::make_shared<Component>(file->uid, file, info.filePath());
 		patch->setRemovable(true);
 		patch->setMovable(true);
 		if(ENV.metadataIndex()->hasUid(file->uid))
@@ -573,7 +274,7 @@ void ComponentList::loadPreComponentConfig()
 	// is there anything left to sort?
 	if(loadedPatches.isEmpty())
 	{
-		// TODO: save the order here?
+		scheduleSave();
 		return;
 	}
 
@@ -596,25 +297,359 @@ void ComponentList::loadPreComponentConfig()
 			appendPatch(value);
 		}
 	}
-	// TODO: save the order here?
+	scheduleSave();
 }
 
+// END: save/load
 
-void ComponentList::load()
+void ComponentList::appendPatch(ComponentPtr patch)
 {
-	// FIXME: actually use fine-grained updates, not this...
-	beginResetModel();
-	d->m_patches.clear();
-	endResetModel();
-	QFile componentsFile(FS::PathCombine(d->m_instance->instanceRoot(), "mmc-pack.json"));
-	if(componentsFile.exists())
+	auto id = patch->getID();
+	if(id.isEmpty())
 	{
-		// well, nothing yet...
+		qWarning() << "Attempt to add a component with empty ID!";
+		return;
+	}
+	if(d->componentIndex.contains(id))
+	{
+		qWarning() << "Attempt to add a component that is already present!";
+		return;
+	}
+	int index = d->components.size();
+	beginInsertRows(QModelIndex(), index, index);
+	d->components.append(patch);
+	d->componentIndex[id] = patch;
+	endInsertRows();
+	scheduleSave();
+}
+
+bool ComponentList::remove(const int index)
+{
+	auto patch = getComponent(index);
+	if (!patch->isRemovable())
+	{
+		qWarning() << "Patch" << patch->getID() << "is non-removable";
+		return false;
+	}
+
+	if(!removeComponent_internal(patch))
+	{
+		qCritical() << "Patch" << patch->getID() << "could not be removed";
+		return false;
+	}
+
+	beginRemoveRows(QModelIndex(), index, index);
+	d->components.removeAt(index);
+	d->componentIndex.remove(patch->getID());
+	endRemoveRows();
+	reapplyPatches();
+	scheduleSave();
+	return true;
+}
+
+bool ComponentList::remove(const QString id)
+{
+	int i = 0;
+	for (auto patch : d->components)
+	{
+		if (patch->getID() == id)
+		{
+			return remove(i);
+		}
+		i++;
+	}
+	return false;
+}
+
+bool ComponentList::customize(int index)
+{
+	auto patch = getComponent(index);
+	if (!patch->isCustomizable())
+	{
+		qDebug() << "Patch" << patch->getID() << "is not customizable";
+		return false;
+	}
+	if(!customizeComponent_internal(patch))
+	{
+		qCritical() << "Patch" << patch->getID() << "could not be customized";
+		return false;
+	}
+	reapplyPatches();
+	scheduleSave();
+	// FIXME: maybe later in unstable
+	// emit dataChanged(createIndex(index, 0), createIndex(index, columnCount(QModelIndex()) - 1));
+	return true;
+}
+
+bool ComponentList::revertToBase(int index)
+{
+	auto patch = getComponent(index);
+	if (!patch->isRevertible())
+	{
+		qDebug() << "Patch" << patch->getID() << "is not revertible";
+		return false;
+	}
+	if(!revertComponent_internal(patch))
+	{
+		qCritical() << "Patch" << patch->getID() << "could not be reverted";
+		return false;
+	}
+	reapplyPatches();
+	scheduleSave();
+	// FIXME: maybe later in unstable
+	// emit dataChanged(createIndex(index, 0), createIndex(index, columnCount(QModelIndex()) - 1));
+	return true;
+}
+
+ComponentPtr ComponentList::getComponent(const QString &id)
+{
+	auto iter = d->componentIndex.find(id);
+	if (iter == d->componentIndex.end())
+	{
+		return nullptr;
+	}
+	return *iter;
+}
+
+ComponentPtr ComponentList::getComponent(int index)
+{
+	if(index < 0 || index >= d->components.size())
+	{
+		return nullptr;
+	}
+	return d->components[index];
+}
+
+bool ComponentList::isVanilla()
+{
+	for(auto patchptr: d->components)
+	{
+		if(patchptr->isCustom())
+			return false;
+	}
+	return true;
+}
+
+bool ComponentList::revertToVanilla()
+{
+	// remove patches, if present
+	auto VersionPatchesCopy = d->components;
+	for(auto & it: VersionPatchesCopy)
+	{
+		if (!it->isCustom())
+		{
+			continue;
+		}
+		if(it->isRevertible() || it->isRemovable())
+		{
+			if(!remove(it->getID()))
+			{
+				qWarning() << "Couldn't remove" << it->getID() << "from profile!";
+				reapplyPatches();
+				scheduleSave();
+				return false;
+			}
+		}
+	}
+	reapplyPatches();
+	scheduleSave();
+	return true;
+}
+
+QVariant ComponentList::data(const QModelIndex &index, int role) const
+{
+	if (!index.isValid())
+		return QVariant();
+
+	int row = index.row();
+	int column = index.column();
+
+	if (row < 0 || row >= d->components.size())
+		return QVariant();
+
+	auto patch = d->components.at(row);
+
+	if (role == Qt::DisplayRole)
+	{
+		switch (column)
+		{
+		case 0:
+			return d->components.at(row)->getName();
+		case 1:
+		{
+			if(patch->isCustom())
+			{
+				return QString("%1 (Custom)").arg(patch->getVersion());
+			}
+			else
+			{
+				return patch->getVersion();
+			}
+		}
+		default:
+			return QVariant();
+		}
+	}
+	if(role == Qt::DecorationRole)
+	{
+		switch(column)
+		{
+		case 0:
+		{
+			auto severity = patch->getProblemSeverity();
+			switch (severity)
+			{
+				case ProblemSeverity::Warning:
+					return "warning";
+				case ProblemSeverity::Error:
+					return "error";
+				default:
+					return QVariant();
+			}
+		}
+		default:
+		{
+			return QVariant();
+		}
+		}
+	}
+	return QVariant();
+}
+QVariant ComponentList::headerData(int section, Qt::Orientation orientation, int role) const
+{
+	if (orientation == Qt::Horizontal)
+	{
+		if (role == Qt::DisplayRole)
+		{
+			switch (section)
+			{
+			case 0:
+				return tr("Name");
+			case 1:
+				return tr("Version");
+			default:
+				return QVariant();
+			}
+		}
+	}
+	return QVariant();
+}
+Qt::ItemFlags ComponentList::flags(const QModelIndex &index) const
+{
+	if (!index.isValid())
+		return Qt::NoItemFlags;
+	return Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+}
+
+int ComponentList::rowCount(const QModelIndex &parent) const
+{
+	return d->components.size();
+}
+
+int ComponentList::columnCount(const QModelIndex &parent) const
+{
+	return 2;
+}
+
+void ComponentList::saveCurrentOrder() const
+{
+	ProfileUtils::PatchOrder order;
+	for(auto item: d->components)
+	{
+		if(!item->isMoveable())
+			continue;
+		order.append(item->getID());
+	}
+	saveOrder_internal(order);
+}
+
+void ComponentList::move(const int index, const MoveDirection direction)
+{
+	int theirIndex;
+	if (direction == MoveUp)
+	{
+		theirIndex = index - 1;
 	}
 	else
 	{
-		loadPreComponentConfig();
+		theirIndex = index + 1;
 	}
+
+	if (index < 0 || index >= d->components.size())
+		return;
+	if (theirIndex >= rowCount())
+		theirIndex = rowCount() - 1;
+	if (theirIndex == -1)
+		theirIndex = rowCount() - 1;
+	if (index == theirIndex)
+		return;
+	int togap = theirIndex > index ? theirIndex + 1 : theirIndex;
+
+	auto from = getComponent(index);
+	auto to = getComponent(theirIndex);
+
+	if (!from || !to || !to->isMoveable() || !from->isMoveable())
+	{
+		return;
+	}
+	beginMoveRows(QModelIndex(), index, index, QModelIndex(), togap);
+	d->components.swap(index, theirIndex);
+	endMoveRows();
+	reapplyPatches();
+	scheduleSave();
+}
+void ComponentList::resetOrder()
+{
+	resetOrder_internal();
+	reload();
+}
+
+// FIXME: this should either erase the current launch profile or mark it as dirty in some way
+bool ComponentList::reapplyPatches()
+{
+	try
+	{
+		d->m_profile.reset(new LaunchProfile);
+		for(auto file: d->components)
+		{
+			qDebug() << "Applying" << file->getID() << (file->getProblemSeverity() == ProblemSeverity::Error ? "ERROR" : "GOOD");
+			file->applyTo(d->m_profile.get());
+		}
+	}
+	catch (Exception & error)
+	{
+		d->m_profile.reset();
+		qWarning() << "Couldn't apply profile patches because: " << error.cause();
+		return false;
+	}
+	return true;
+}
+
+void ComponentList::installJarMods(QStringList selectedFiles)
+{
+	installJarMods_internal(selectedFiles);
+}
+
+void ComponentList::installCustomJar(QString selectedFile)
+{
+	installCustomJar_internal(selectedFile);
+}
+
+
+/*
+ * TODO: get rid of this. Get rid of all order numbers.
+ */
+int ComponentList::getFreeOrderNumber()
+{
+	int largest = 100;
+	// yes, I do realize this is dumb. The order thing itself is dumb. and to be removed next.
+	for(auto thing: d->components)
+	{
+		int order = thing->getOrder();
+		if(order > largest)
+			largest = order;
+	}
+	return largest + 1;
 }
 
 bool ComponentList::saveOrder_internal(ProfileUtils::PatchOrder order) const
@@ -800,12 +835,12 @@ bool ComponentList::installJarMods_internal(QStringList filepaths)
 		file.write(OneSixVersionFormat::versionFileToJson(f, true).toJson());
 		file.close();
 
-		auto patch = std::make_shared<Component>(f, patchFileName);
+		auto patch = std::make_shared<Component>(f->uid, f, patchFileName);
 		patch->setMovable(true);
 		patch->setRemovable(true);
 		appendPatch(patch);
 	}
-	saveCurrentOrder();
+	scheduleSave();
 	reapplyPatches();
 	return true;
 }
@@ -865,12 +900,12 @@ bool ComponentList::installCustomJar_internal(QString filepath)
 	file.write(OneSixVersionFormat::versionFileToJson(f, true).toJson());
 	file.close();
 
-	auto patch = std::make_shared<Component>(f, patchFileName);
+	auto patch = std::make_shared<Component>(f->uid, f, patchFileName);
 	patch->setMovable(true);
 	patch->setRemovable(true);
 	appendPatch(patch);
 
-	saveCurrentOrder();
+	scheduleSave();
 	reapplyPatches();
 	return true;
 }

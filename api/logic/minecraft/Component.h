@@ -20,7 +20,7 @@ class MULTIMC_LOGIC_EXPORT Component : public ProblemProvider
 {
 public:
 	Component(std::shared_ptr<Meta::Version> version);
-	Component(std::shared_ptr<VersionFile> file, const QString &filename = QString());
+	Component(const QString & uid, std::shared_ptr<VersionFile> file, const QString &filename = QString());
 
 	virtual ~Component(){};
 	void applyTo(LaunchProfile *profile);
@@ -61,9 +61,16 @@ protected:
 	bool m_isRemovable = false;
 	bool m_isVanilla = false;
 
+	// component list properties
+	QString uid;
+	QString cachedName;
+	QString currentVersion;
 	bool m_orderOverride = false;
 	int m_order = 0;
+	bool asDependency = false;
+	bool pinned = false;
 
+	// load state
 	std::shared_ptr<Meta::Version> m_metaVersion;
 	std::shared_ptr<VersionFile> m_file;
 	QString m_filename;
