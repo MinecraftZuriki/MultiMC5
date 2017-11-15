@@ -19,6 +19,9 @@ class VersionFile;
 class MULTIMC_LOGIC_EXPORT Component : public ProblemProvider
 {
 public:
+	Component(const QString &uid, const QString &filename);
+
+	// DEPRECATED: remove these constructors?
 	Component(std::shared_ptr<Meta::Version> version);
 	Component(const QString & uid, std::shared_ptr<VersionFile> file, const QString &filename = QString());
 
@@ -54,26 +57,27 @@ public:
 	const QList<PatchProblem> getProblems() const override;
 	ProblemSeverity getProblemSeverity() const override;
 
-protected:
+public: /* data */
 	// Properties for UI and version manipulation from UI in general
 	bool m_isMovable = false;
 	bool m_isRevertible = false;
 	bool m_isRemovable = false;
 	bool m_isVanilla = false;
 
-	// component list properties
-	QString uid;
+	// persistent component list properties
+	QString m_uid;
 	QString cachedName;
-	QString currentVersion;
+	QString m_currentVersion;
+
+	// temporary component list properties (lost on full reload)
 	bool m_orderOverride = false;
 	int m_order = 0;
-	bool asDependency = false;
-	bool pinned = false;
 
 	// load state
 	std::shared_ptr<Meta::Version> m_metaVersion;
 	std::shared_ptr<VersionFile> m_file;
 	QString m_filename;
+	bool m_loaded = false;
 };
 
 typedef std::shared_ptr<Component> ComponentPtr;

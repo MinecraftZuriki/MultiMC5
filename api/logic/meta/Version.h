@@ -79,6 +79,10 @@ public: /* con/des */
 	{
 		return m_recommended;
 	}
+	bool isLoaded() const
+	{
+		return m_data == nullptr;
+	}
 
 	void merge(const std::shared_ptr<BaseEntity> &other) override;
 	void parse(const QJsonObject &obj) override;

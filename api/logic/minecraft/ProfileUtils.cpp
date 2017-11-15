@@ -14,38 +14,6 @@ namespace ProfileUtils
 
 static const int currentOrderFileVersion = 1;
 
-bool writeOverrideOrders(QString path, const PatchOrder &order)
-{
-	QJsonObject obj;
-	obj.insert("version", currentOrderFileVersion);
-	QJsonArray orderArray;
-	for(auto str: order)
-	{
-		orderArray.append(str);
-	}
-	obj.insert("order", orderArray);
-	QSaveFile orderFile(path);
-	if (!orderFile.open(QFile::WriteOnly))
-	{
-		qCritical() << "Couldn't open" << orderFile.fileName()
-					 << "for writing:" << orderFile.errorString();
-		return false;
-	}
-	auto data = QJsonDocument(obj).toJson(QJsonDocument::Indented);
-	if(orderFile.write(data) != data.size())
-	{
-		qCritical() << "Couldn't write all the data into" << orderFile.fileName()
-					 << "because:" << orderFile.errorString();
-		return false;
-	}
-	if(!orderFile.commit())
-	{
-		qCritical() << "Couldn't save" << orderFile.fileName()
-					 << "because:" << orderFile.errorString();
-	}
-	return true;
-}
-
 bool readOverrideOrders(QString path, PatchOrder &order)
 {
 	QFile orderFile(path);

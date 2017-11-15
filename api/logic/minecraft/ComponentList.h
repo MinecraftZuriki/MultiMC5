@@ -98,7 +98,10 @@ private:
 	bool reapplyPatches();
 
 	/// Add the component to the internal list of patches
-	void appendPatch(ComponentPtr component);
+	void appendComponent(ComponentPtr component);
+
+	QString componentsFilePath() const;
+	QString patchesPattern() const;
 
 	/// DEPRECATED, remove ASAP
 	int getFreeOrderNumber();
@@ -113,7 +116,8 @@ private:
 	bool removeComponent_internal(ComponentPtr patch);
 	bool customizeComponent_internal(ComponentPtr patch);
 	bool revertComponent_internal(ComponentPtr patch);
-	void loadPreComponentConfig();
+
+	bool loadPreComponentConfig();
 
 private: /* data */
 

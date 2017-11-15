@@ -7,16 +7,28 @@
 #include "VersionFile.h"
 #include "minecraft/ComponentList.h"
 
+Component::Component(const QString& uid, const QString& filename)
+{
+	m_uid = uid;
+	m_filename = filename;
+}
+
 Component::Component(std::shared_ptr<Meta::Version> version)
 	:m_metaVersion(version)
 {
-	this->uid = version->uid();
+	m_uid = version->uid();
+	m_currentVersion = version->version();
+	cachedName = version->name();
+	m_loaded = version->isLoaded();
 }
 
 Component::Component(const QString& uid, std::shared_ptr<VersionFile> file, const QString& filename)
 	:m_file(file), m_filename(filename)
 {
-	this->uid = uid;
+	m_uid = uid;
+	m_currentVersion = m_file->version;
+	cachedName = m_file->name;
+	m_loaded = true;
 }
 
 std::shared_ptr<Meta::Version> Component::getMeta()
@@ -56,9 +68,9 @@ std::shared_ptr<class VersionFile> Component::getVersionFile() const
 std::shared_ptr<class Meta::VersionList> Component::getVersionList() const
 {
 	// FIXME: what if the metadata index isn't loaded yet?
-	if(ENV.metadataIndex()->hasUid(uid))
+	if(ENV.metadataIndex()->hasUid(m_uid))
 	{
-		return ENV.metadataIndex()->get(uid);
+		return ENV.metadataIndex()->get(m_uid);
 	}
 	return nullptr;
 }
@@ -82,13 +94,13 @@ void Component::setOrder(int order)
 }
 QString Component::getID()
 {
-	return uid;
+	return m_uid;
 }
 QString Component::getName()
 {
 	if (!cachedName.isEmpty())
 		return cachedName;
-	return uid;
+	return m_uid;
 }
 QString Component::getVersion()
 {
@@ -99,7 +111,7 @@ QString Component::getVersion()
 	{
 		return vfile->version;
 	}
-	return currentVersion;
+	return m_currentVersion;
 }
 QString Component::getFilename()
 {
@@ -122,7 +134,7 @@ QDateTime Component::getReleaseDateTime()
 
 bool Component::isCustom()
 {
-	return !m_isVanilla;
+	return m_file != nullptr;
 };
 
 bool Component::isCustomizable()

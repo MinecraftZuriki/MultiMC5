@@ -31,6 +31,10 @@
 #include <minecraft/MinecraftInstance.h>
 #include <QUuid>
 #include <QTimer>
+#include <Json.h>
+
+using ComponentContainer = QList<ComponentPtr>;
+using ComponentIndex = QMap<QString, ComponentPtr>;
 
 struct ComponentListData
 {
@@ -42,10 +46,19 @@ struct ComponentListData
 
 	// version information migrated from instance.cfg file. Single use on migration!
 	std::map<QString, QString> m_oldConfigVersions;
+	QString getOldConfigVersion(const QString& uid) const
+	{
+		const auto iter = m_oldConfigVersions.find(uid);
+		if(iter != m_oldConfigVersions.cend())
+		{
+			return (*iter).second;
+		}
+		return QString();
+	}
 
 	// persistent list of components and related machinery
-	QList<ComponentPtr> components;
-	QMap<QString, ComponentPtr> componentIndex;
+	ComponentContainer components;
+	ComponentIndex componentIndex;
 	bool dirty = false;
 	QTimer m_saveTimer;
 };
@@ -69,7 +82,125 @@ ComponentList::~ComponentList()
 	}
 }
 
-// BEGIN: save/load
+// BEGIN: component file format
+
+static const int currentComponentsFileVersion = 1;
+
+static QJsonObject componentToJsonV1(ComponentPtr component)
+{
+	QJsonObject obj;
+	obj.insert("uid", component->m_uid);
+	if(!component->m_currentVersion.isEmpty())
+	{
+		obj.insert("currentVersion", component->m_currentVersion);
+	}
+	if(!component->cachedName.isEmpty())
+	{
+		obj.insert("cachedName", component->cachedName);
+	}
+	return obj;
+}
+
+static ComponentPtr componentFromJsonV1(const QString & componentJsonPattern, const QJsonObject &obj)
+{
+	auto uid = Json::requireString(obj.value("uid"));
+	auto filePath = FS::PathCombine(componentJsonPattern.arg(uid), QString("%1.json").arg(uid));
+	auto component = std::make_shared<Component>(uid, filePath);
+	component->m_currentVersion = Json::ensureString(obj.value("currentVersion"));
+	component->cachedName = Json::ensureString(obj.value("cachedName"));
+	return component;
+}
+
+// Save the given component container data to a file
+static bool saveComponentList(const QString & filename, const ComponentContainer & container)
+{
+	QJsonObject obj;
+	obj.insert("formatVersion", currentComponentsFileVersion);
+	QJsonArray orderArray;
+	for(auto component: container)
+	{
+		orderArray.append(componentToJsonV1(component));
+	}
+	obj.insert("components", orderArray);
+	QSaveFile outFile(filename);
+	if (!outFile.open(QFile::WriteOnly))
+	{
+		qCritical() << "Couldn't open" << outFile.fileName()
+					 << "for writing:" << outFile.errorString();
+		return false;
+	}
+	auto data = QJsonDocument(obj).toJson(QJsonDocument::Indented);
+	if(outFile.write(data) != data.size())
+	{
+		qCritical() << "Couldn't write all the data into" << outFile.fileName()
+					 << "because:" << outFile.errorString();
+		return false;
+	}
+	if(!outFile.commit())
+	{
+		qCritical() << "Couldn't save" << outFile.fileName()
+					 << "because:" << outFile.errorString();
+	}
+	return true;
+}
+
+// Read the given file into component containers
+static bool loadComponentList(const QString & filename, const QString & componentJsonPattern, ComponentContainer & container)
+{
+	QFile componentsFile(filename);
+	if (!componentsFile.exists())
+	{
+		qWarning() << "Components file doesn't exist. This should never happen.";
+		return false;
+	}
+	if (!componentsFile.open(QFile::ReadOnly))
+	{
+		qCritical() << "Couldn't open" << componentsFile.fileName()
+					 << " for reading:" << componentsFile.errorString();
+		qWarning() << "Ignoring overriden order";
+		return false;
+	}
+
+	// and it's valid JSON
+	QJsonParseError error;
+	QJsonDocument doc = QJsonDocument::fromJson(componentsFile.readAll(), &error);
+	if (error.error != QJsonParseError::NoError)
+	{
+		qCritical() << "Couldn't parse" << componentsFile.fileName() << ":" << error.errorString();
+		qWarning() << "Ignoring overriden order";
+		return false;
+	}
+
+	// and then read it and process it if all above is true.
+	try
+	{
+		auto obj = Json::requireObject(doc);
+		// check order file version.
+		auto version = Json::requireInteger(obj.value("formatVersion"));
+		if (version != currentComponentsFileVersion)
+		{
+			throw JSONValidationError(QObject::tr("Invalid component file version, expected %1")
+										  .arg(currentComponentsFileVersion));
+		}
+		auto orderArray = Json::requireArray(obj.value("components"));
+		for(auto item: orderArray)
+		{
+			auto obj = Json::requireObject(item, "Component must be an object.");
+			container.append(componentFromJsonV1(componentJsonPattern, obj));
+		}
+	}
+	catch (JSONValidationError &err)
+	{
+		qCritical() << "Couldn't parse" << componentsFile.fileName() << ": bad file format";
+		container.clear();
+		return false;
+	}
+	return true;
+}
+
+// END: component file format
+
+// BEGIN: save/load logic
 
 bool ComponentList::saveIsScheduled() const
 {
@@ -86,29 +217,52 @@ void ComponentList::scheduleSave()
 	d->m_saveTimer.start();
 }
 
+QString ComponentList::componentsFilePath() const
+{
+	return FS::PathCombine(d->m_instance->instanceRoot(), "mmc-pack.json");
+}
+
+QString ComponentList::patchesPattern() const
+{
+	return FS::PathCombine(d->m_instance->instanceRoot(), "patches", "%1.json");
+}
+
+
 void ComponentList::save()
 {
-	qDebug() << "Component list save would be performed now for" << d->m_instance->name();
+	qDebug() << "Component list save performed now for" << d->m_instance->name();
+	auto filename = componentsFilePath();
+	saveComponentList(filename, d->components);
 	d->dirty = false;
-	// TODO: implement
 }
 
 void ComponentList::load()
 {
-	// FIXME: actually use fine-grained updates, not this...
+	auto filename = componentsFilePath();
+	QFile componentsFile(filename);
+
+	// migrate old config to new one, if needed
+	if(!componentsFile.exists())
+	{
+		if(!loadPreComponentConfig())
+		{
+			// FIXME: the user should be notified...
+			qCritical() << "Failed to convert old pre-component config for instance" << d->m_instance->name();
+			return;
+		}
+	}
+
+	ComponentContainer newComponents;
+	loadComponentList(filename, patchesPattern(), newComponents);
 	beginResetModel();
-	d->components.clear();
+	// FIXME: actually use fine-grained updates, not this...
+	d->components = newComponents;
 	d->componentIndex.clear();
+	for(auto component: newComponents)
+	{
+		d->componentIndex[component->m_uid] = component;
+	}
 	endResetModel();
-	QFile componentsFile(FS::PathCombine(d->m_instance->instanceRoot(), "mmc-pack.json"));
-	if(componentsFile.exists())
-	{
-		// well, nothing yet...
-	}
-	else
-	{
-		loadPreComponentConfig();
-	}
 }
 
 void ComponentList::reload()
@@ -182,14 +336,20 @@ static void upgradeDeprecatedFiles(QString root, QString instanceName)
 	}
 }
 
-void ComponentList::loadPreComponentConfig()
+bool ComponentList::loadPreComponentConfig()
 {
+	// upgrade the very old files from the beginnings of MultiMC 5
 	upgradeDeprecatedFiles(d->m_instance->instanceRoot(), d->m_instance->name());
-	auto addBuiltinPatch = [&](const QString &uid, const QString intendedVersion, int order)
+
+	QList<ComponentPtr> components;
+	QSet<QString> loaded;
+
+	auto addBuiltinPatch = [&](const QString &uid, int order)
 	{
 		auto jsonFilePath = FS::PathCombine(d->m_instance->instanceRoot(), "patches" , uid + ".json");
+		auto intendedVersion = d->getOldConfigVersion(uid);
 		// load up the base minecraft patch
-		ComponentPtr profilePatch;
+		ComponentPtr component;
 		if(QFile::exists(jsonFilePath))
 		{
 			auto file = ProfileUtils::parseJsonFile(QFileInfo(jsonFilePath), false);
@@ -197,23 +357,23 @@ void ComponentList::loadPreComponentConfig()
 			{
 				file->version = intendedVersion;
 			}
-			profilePatch = std::make_shared<Component>(uid, file, jsonFilePath);
-			profilePatch->setVanilla(false);
-			profilePatch->setRevertible(true);
+			component = std::make_shared<Component>(uid, file, jsonFilePath);
+			component->setVanilla(false);
+			component->setRevertible(true);
 		}
 		else
 		{
 			auto metaVersion = ENV.metadataIndex()->get(uid, intendedVersion);
-			profilePatch = std::make_shared<Component>(metaVersion);
-			profilePatch->setVanilla(true);
+			component = std::make_shared<Component>(metaVersion);
+			component->setVanilla(true);
 		}
-		profilePatch->setOrder(order);
-		appendPatch(profilePatch);
+		component->setOrder(order);
+		components.append(component);
 	};
-	addBuiltinPatch("net.minecraft", getComponentVersion("net.minecraft"), -2);
-	addBuiltinPatch("org.lwjgl", getComponentVersion("org.lwjgl"), -1);
+	addBuiltinPatch("net.minecraft", -2);
+	addBuiltinPatch("org.lwjgl", -1);
 
-	// first, collect all patches (that are not builtins of OneSix) and load them
+	// first, collect all other file-based patches and load them
 	QMap<QString, ComponentPtr> loadedPatches;
 	QDir patchesDir(FS::PathCombine(d->m_instance->instanceRoot(),"patches"));
 	for (auto info : patchesDir.entryInfoList(QStringList() << "*.json", QDir::Files))
@@ -221,7 +381,7 @@ void ComponentList::loadPreComponentConfig()
 		// parse the file
 		qDebug() << "Reading" << info.fileName();
 		auto file = ProfileUtils::parseJsonFile(info, true);
-		// ignore builtins
+		// ignore builtins, they've been handled already
 		if (file->uid == "net.minecraft")
 			continue;
 		if (file->uid == "org.lwjgl")
@@ -236,10 +396,10 @@ void ComponentList::loadPreComponentConfig()
 		}
 		loadedPatches[file->uid] = patch;
 	}
-	// these are 'special'... if not already loaded from instance files, grab them from the metadata repo.
+	// try to load the other 'hardcoded' patches (forge, liteloader), if they weren't loaded from files
 	auto loadSpecial = [&](const QString & uid, int order)
 	{
-		auto patchVersion = getComponentVersion(uid);
+		auto patchVersion = d->getOldConfigVersion(uid);
 		if(!patchVersion.isEmpty() && !loadedPatches.contains(uid))
 		{
 			auto patch = std::make_shared<Component>(ENV.metadataIndex()->get(uid, patchVersion));
@@ -253,9 +413,11 @@ void ComponentList::loadPreComponentConfig()
 	loadSpecial("net.minecraftforge", 5);
 	loadSpecial("com.mumfrey.liteloader", 10);
 
-	// now add all the patches by user sort order
+	// load the old order.json file, if present
 	ProfileUtils::PatchOrder userOrder;
 	ProfileUtils::readOverrideOrders(FS::PathCombine(d->m_instance->instanceRoot(), "order.json"), userOrder);
+
+	// now add all the patches by user sort order
 	for (auto uid : userOrder)
 	{
 		// ignore builtins
@@ -268,41 +430,39 @@ void ComponentList::loadPreComponentConfig()
 		{
 			continue;
 		}
-		appendPatch(loadedPatches.take(uid));
+		components.append(loadedPatches.take(uid));
 	}
 
-	// is there anything left to sort?
-	if(loadedPatches.isEmpty())
+	// is there anything left to sort? - this is used when there are leftover components that aren't part of the order.json
+	if(!loadedPatches.isEmpty())
 	{
-		scheduleSave();
-		return;
-	}
-
-	// inserting into multimap by order number as key sorts the patches and detects duplicates
-	QMultiMap<int, ComponentPtr> files;
-	auto iter = loadedPatches.begin();
-	while(iter != loadedPatches.end())
-	{
-		files.insert((*iter)->getOrder(), *iter);
-		iter++;
-	}
-
-	// then just extract the patches and put them in the list
-	for (auto order : files.keys())
-	{
-		const auto &values = files.values(order);
-		for(auto &value: values)
+		// inserting into multimap by order number as key sorts the patches and detects duplicates
+		QMultiMap<int, ComponentPtr> files;
+		auto iter = loadedPatches.begin();
+		while(iter != loadedPatches.end())
 		{
-			// TODO: put back the insertion of problem messages here, so the user knows about the id duplication
-			appendPatch(value);
+			files.insert((*iter)->getOrder(), *iter);
+			iter++;
+		}
+
+		// then just extract the patches and put them in the list
+		for (auto order : files.keys())
+		{
+			const auto &values = files.values(order);
+			for(auto &value: values)
+			{
+				// TODO: put back the insertion of problem messages here, so the user knows about the id duplication
+				components.append(value);
+			}
 		}
 	}
-	scheduleSave();
+	// new we have a complete list of components...
+	return saveComponentList(componentsFilePath(), components);
 }
 
 // END: save/load
 
-void ComponentList::appendPatch(ComponentPtr patch)
+void ComponentList::appendComponent(ComponentPtr patch)
 {
 	auto id = patch->getID();
 	if(id.isEmpty())
@@ -811,7 +971,7 @@ bool ComponentList::installJarMods_internal(QStringList filepaths)
 		auto patch = std::make_shared<Component>(f->uid, f, patchFileName);
 		patch->setMovable(true);
 		patch->setRemovable(true);
-		appendPatch(patch);
+		appendComponent(patch);
 	}
 	scheduleSave();
 	reapplyPatches();
@@ -876,7 +1036,7 @@ bool ComponentList::installCustomJar_internal(QString filepath)
 	auto patch = std::make_shared<Component>(f->uid, f, patchFileName);
 	patch->setMovable(true);
 	patch->setRemovable(true);
-	appendPatch(patch);
+	appendComponent(patch);
 
 	scheduleSave();
 	reapplyPatches();
@@ -904,10 +1064,10 @@ bool ComponentList::setComponentVersion(const QString& uid, const QString& versi
 
 QString ComponentList::getComponentVersion(const QString& uid) const
 {
-	const auto iter = d->m_oldConfigVersions.find(uid);
-	if (iter != d->m_oldConfigVersions.end())
+	const auto iter = d->componentIndex.find(uid);
+	if (iter != d->componentIndex.end())
 	{
-		return (*iter).second;
+		return (*iter)->getVersion();
 	}
 	return QString();
 }
